@@ -2,9 +2,20 @@
   <div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
       <h2>资产列表</h2>
-      <el-button type="primary" size="small" @click="showAdd = true"><el-icon><Plus /></el-icon> 添加资产</el-button>
+      <div style="display: flex; gap: 8px;">
+        <el-input v-model="searchText" placeholder="搜索主机/IP..." size="small" style="width: 200px;" @input="filterAssets" />
+        <el-button type="primary" size="small" @click="showAdd = true"><el-icon><Plus /></el-icon> 添加资产</el-button>
+      </div>
     </div>
-    <el-table :data="assets" style="width: 100%;">
+
+    <div class="stat-grid" style="margin-bottom: 16px;">
+      <div class="stat-card info"><div class="stat-label">总资产</div><div class="stat-value">{{ assets.length }}</div></div>
+      <div class="stat-card success"><div class="stat-label">存活</div><div class="stat-value">{{ assets.filter(a => a.is_alive).length }}</div></div>
+      <div class="stat-card warning"><div class="stat-label">范围内</div><div class="stat-value">{{ assets.filter(a => a.scope_status === 'in_scope').length }}</div></div>
+      <div class="stat-card critical"><div class="stat-label">核心资产</div><div class="stat-value">{{ assets.filter(a => a.importance === 'critical').length }}</div></div>
+    </div>
+
+    <el-table :data="displayAssets" style="width: 100%;" @row-click="openDetail">
       <el-table-column prop="host" label="主机" min-width="180" />
       <el-table-column prop="port" label="端口" width="80" />
       <el-table-column prop="application" label="应用" width="150" />
@@ -27,8 +38,58 @@
       <el-table-column prop="is_alive" label="存活" width="70">
         <template #default="{ row }">{{ row.is_alive ? '🟢' : '🔴' }}</template>
       </el-table-column>
+      <el-table-column label="操作" width="160">
+        <template #default="{ row }">
+          <el-button size="small" @click.stop="quickScan(row)">扫描</el-button>
+          <el-button size="small" type="danger" @click.stop="deleteAsset(row)">删除</el-button>
+        </template>
+      </el-table-column>
     </el-table>
 
+    <!-- Asset Detail Drawer -->
+    <el-drawer v-model="showDetail" :title="detailAsset?.host" size="500px">
+      <div v-if="detailAsset" style="padding: 0 8px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div class="card" style="padding: 12px;">
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">类型</div>
+            <div>{{ detailAsset.asset_type }}</div>
+          </div>
+          <div class="card" style="padding: 12px;">
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">端口</div>
+            <div>{{ detailAsset.port || '-' }}</div>
+          </div>
+          <div class="card" style="padding: 12px;">
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">应用</div>
+            <div>{{ detailAsset.application || '-' }} {{ detailAsset.app_version || '' }}</div>
+          </div>
+          <div class="card" style="padding: 12px;">
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">服务</div>
+            <div>{{ detailAsset.server || '-' }}</div>
+          </div>
+          <div class="card" style="padding: 12px;">
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">操作系统</div>
+            <div>{{ detailAsset.os || '-' }}</div>
+          </div>
+          <div class="card" style="padding: 12px;">
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">存活</div>
+            <div>{{ detailAsset.is_alive ? '🟢 存活' : '🔴 不可达' }}</div>
+          </div>
+        </div>
+
+        <h4 style="margin: 16px 0 8px;">快捷操作</h4>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <el-button size="small" type="primary" @click="quickScan(detailAsset)">端口扫描</el-button>
+          <el-button size="small" @click="quickScan(detailAsset, 'deep')">深度扫描</el-button>
+        </div>
+
+        <div v-if="detailAsset.fingerprints" style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px;">指纹信息</h4>
+          <pre style="font-size: 12px; background: var(--rs-bg-secondary); padding: 12px; border-radius: 6px; overflow: auto;">{{ JSON.stringify(detailAsset.fingerprints, null, 2) }}</pre>
+        </div>
+      </div>
+    </el-drawer>
+
+    <!-- Add Asset Dialog -->
     <el-dialog v-model="showAdd" title="添加资产" width="480px">
       <el-form :model="form" label-width="80px">
         <el-form-item label="类型">
@@ -49,17 +110,67 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../stores/api'
 
 const route = useRoute()
+const router = useRouter()
 const pid = route.params.id
 const assets = ref([])
 const showAdd = ref(false)
+const showDetail = ref(false)
+const detailAsset = ref(null)
+const searchText = ref('')
 const form = ref({ asset_type: 'ip', host: '', port: null, importance: 'normal' })
 
-const load = async () => { const res = await api.get(`/projects/${pid}/assets`); assets.value = res.items || [] }
-const addAsset = async () => { await api.post(`/projects/${pid}/assets`, form.value); showAdd.value = false; await load() }
+const displayAssets = computed(() => {
+  if (!searchText.value) return assets.value
+  const q = searchText.value.toLowerCase()
+  return assets.value.filter(a =>
+    a.host?.toLowerCase().includes(q) || a.application?.toLowerCase().includes(q) || a.server?.toLowerCase().includes(q)
+  )
+})
+
+const load = async () => {
+  try {
+    const res = await api.get(`/projects/${pid}/assets`)
+    assets.value = res.items || []
+  } catch (e) { ElMessage.error('加载资产失败') }
+}
+
+const addAsset = async () => {
+  await api.post(`/projects/${pid}/assets`, form.value)
+  showAdd.value = false
+  await load()
+}
+
+const openDetail = (row) => {
+  detailAsset.value = row
+  showDetail.value = true
+}
+
+const deleteAsset = async (row) => {
+  await ElMessageBox.confirm(`确认删除资产「${row.host}」？`, '删除确认', { type: 'warning' })
+  await api.delete(`/projects/${pid}/assets/${row.id}`)
+  ElMessage.success('已删除')
+  await load()
+}
+
+const quickScan = async (asset, strategy = 'quick') => {
+  try {
+    await api.post(`/projects/${pid}/scans`, {
+      task_name: `扫描 ${asset.host}`,
+      scan_strategy: strategy,
+      targets: [asset.host + (asset.port ? `:${asset.port}` : '')],
+    })
+    ElMessage.success('扫描任务已创建')
+    showDetail.value = false
+  } catch (e) { ElMessage.error('创建扫描失败') }
+}
+
+const filterAssets = () => {}
+
 onMounted(load)
 </script>

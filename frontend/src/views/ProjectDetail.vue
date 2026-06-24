@@ -12,6 +12,7 @@
         </div>
       </div>
       <div style="display: flex; gap: 8px;">
+        <el-button size="small" @click="cloneProject" :loading="cloning">克隆项目</el-button>
         <el-button type="danger" plain @click="emergencyStop">🔴 紧急停止</el-button>
       </div>
     </div>
@@ -55,6 +56,11 @@
       <el-tab-pane label="报告" name="reports">
         <div style="display: flex; gap: 8px; margin-bottom: 16px;">
           <el-button type="primary" size="small" @click="generateReport" :loading="generating">生成渗透测试报告</el-button>
+          <el-button size="small" @click="aiReportSummary" :loading="aiSummarizing">AI 生成总结</el-button>
+        </div>
+        <div v-if="aiSummary" class="card" style="padding: 16px; margin-bottom: 16px; border-left: 4px solid var(--rs-accent);">
+          <h4 style="margin-bottom: 8px;">AI 报告总结</h4>
+          <div style="white-space: pre-wrap; font-size: 13px;">{{ aiSummary }}</div>
         </div>
         <el-table :data="reports" style="width: 100%;">
           <el-table-column prop="title" label="报告名称" min-width="200" />
@@ -67,6 +73,33 @@
 
       <el-tab-pane label="作战管理" name="operations">
         <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/operations`)">代理/凭据/主机/时间线/清理 →</el-button>
+      </el-tab-pane>
+
+      <el-tab-pane label="手工测试" name="testing">
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/testing`)">测试清单/Payload/笔记/分工 →</el-button>
+        </div>
+        <div style="color: var(--rs-text-secondary); font-size: 13px;">
+          包含：逻辑漏洞Checklist、Payload武器库、测试笔记、任务分工防撞车
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="红蓝对抗" name="redblue">
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/redblue`)">护网计分板 →</el-button>
+        </div>
+        <div style="color: var(--rs-text-secondary); font-size: 13px;">
+          红蓝对抗演练计分、实时积分排名
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="LLM安全测试" name="llmtest">
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/llm-test`)">LLM OWASP Top 10 测试 →</el-button>
+        </div>
+        <div style="color: var(--rs-text-secondary); font-size: 13px;">
+          自动化测试 LLM 应用：Prompt注入、数据泄露、越权、幻觉检测等
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="ATT&CK" name="attck">
@@ -115,13 +148,14 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import api from '../stores/api'
 import ScopeManager from '../components/ScopeManager.vue'
 import NetworkTopology from '../components/NetworkTopology.vue'
 
 const route = useRoute()
+const router = useRouter()
 const pid = route.params.id
 const project = ref(null)
 const activeTab = ref('assets')
@@ -129,6 +163,9 @@ const reports = ref([])
 const generating = ref(false)
 const matching = ref(false)
 const heatmapData = ref(null)
+const aiSummarizing = ref(false)
+const aiSummary = ref('')
+const cloning = ref(false)
 
 const showPipeline = ref(false)
 const pipelines = ref([])
@@ -217,4 +254,23 @@ const runPipeline = async () => {
 
 // Load pipelines when scanning tab shown
 const onTabChange = () => { if (activeTab.value === 'scanning' && !pipelines.value.length) loadPipelines() }
+
+const aiReportSummary = async () => {
+  aiSummarizing.value = true
+  try {
+    const res = await api.post(`/projects/${pid}/ai-report-summary`)
+    aiSummary.value = res.summary
+  } catch (e) { ElMessage.error('AI 总结生成失败，请确认已配置 LLM API Key') }
+  finally { aiSummarizing.value = false }
+}
+
+const cloneProject = async () => {
+  cloning.value = true
+  try {
+    const res = await api.post(`/auth/projects/${pid}/clone`)
+    ElMessage.success(`项目已克隆: ${res.name}`)
+    router.push(`/projects/${res.id}`)
+  } catch (e) { ElMessage.error('克隆失败') }
+  finally { cloning.value = false }
+}
 </script>

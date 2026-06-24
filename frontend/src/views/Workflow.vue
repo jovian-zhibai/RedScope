@@ -4,7 +4,20 @@
       <h2>工单管理</h2>
       <el-button type="primary" @click="showCreate = true"><el-icon><Plus /></el-icon> 新建工单</el-button>
     </div>
-    <el-table :data="orders" style="width: 100%;" @row-click="selectOrder">
+
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <el-select v-model="filterStatus" placeholder="状态" clearable size="small" style="width: 120px;" @change="load">
+        <el-option value="pending" label="待审批" /><el-option value="approved" label="已审批" />
+        <el-option value="in_progress" label="执行中" /><el-option value="completed" label="已完成" />
+        <el-option value="rejected" label="已驳回" />
+      </el-select>
+      <el-select v-model="filterType" placeholder="类型" clearable size="small" style="width: 140px;" @change="load">
+        <el-option v-for="(v,k) in typeLabels" :key="k" :value="k" :label="v" />
+      </el-select>
+      <el-checkbox v-model="showAll" label="显示所有人的工单" size="small" @change="load" />
+    </div>
+
+    <el-table :data="filteredOrders" style="width: 100%;" @row-click="selectOrder">
       <el-table-column prop="title" label="工单标题" min-width="200" />
       <el-table-column prop="order_type" label="类型" width="140">
         <template #default="{ row }"><el-tag size="small">{{ typeLabels[row.order_type] || row.order_type }}</el-tag></template>
@@ -43,8 +56,9 @@
         <el-tag :type="{pending:'warning',approved:'success',in_progress:'primary',review:'info',completed:'success',rejected:'danger'}[selectedOrder.status]">
           {{ statusLabels[selectedOrder.status] }}
         </el-tag>
-        <span style="margin-left: 12px; color: var(--rs-text-secondary);">{{ selectedOrder.order_type }}</span>
+        <span style="margin-left: 12px; color: var(--rs-text-secondary);">{{ typeLabels[selectedOrder.order_type] }}</span>
       </div>
+      <div v-if="selectedOrder.description" style="margin-bottom: 16px; color: var(--rs-text-secondary); font-size: 13px; white-space: pre-wrap;">{{ selectedOrder.description }}</div>
       <div style="margin-bottom: 16px;">
         <el-button v-for="next in validTransitions[selectedOrder.status] || []" :key="next" size="small" :type="next === 'rejected' ? 'danger' : 'primary'" @click="transition(next)">
           {{ statusLabels[next] }}
@@ -55,17 +69,32 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../stores/api'
 
 const orders = ref([]); const showCreate = ref(false); const showDetail = ref(false); const selectedOrder = ref(null)
+const filterStatus = ref(''); const filterType = ref(''); const showAll = ref(true)
 const form = ref({ title: '', order_type: 'pentest_request', priority: 'normal', description: '' })
 const typeLabels = { pentest_request: '渗透测试', retest_request: '复测', baseline_check: '基线检查', hw_exercise: '护网演练', emergency_response: '应急响应', report_review: '报告审核' }
 const statusLabels = { pending: '待审批', approved: '已审批', in_progress: '执行中', review: '待复核', completed: '已完成', rejected: '已驳回' }
 const validTransitions = { pending: ['approved', 'rejected'], approved: ['in_progress'], in_progress: ['review', 'completed'], review: ['completed', 'in_progress'] }
 
-const load = async () => { const res = await api.get('/workflow'); orders.value = res.items || [] }
+const filteredOrders = computed(() => {
+  let list = orders.value
+  if (filterStatus.value) list = list.filter(o => o.status === filterStatus.value)
+  if (filterType.value) list = list.filter(o => o.order_type === filterType.value)
+  return list
+})
+
+const load = async () => {
+  try {
+    const params = showAll.value ? {} : { mine: true }
+    if (filterStatus.value) params.status = filterStatus.value
+    const res = await api.get('/workflow', { params })
+    orders.value = res.items || []
+  } catch (e) { ElMessage.error('加载失败') }
+}
 const create = async () => { await api.post('/workflow', form.value); showCreate.value = false; ElMessage.success('工单已创建'); await load() }
 const selectOrder = (row) => { selectedOrder.value = row; showDetail.value = true }
 const transition = async (status) => { await api.put(`/workflow/${selectedOrder.value.id}/transition`, { new_status: status }); showDetail.value = false; await load() }

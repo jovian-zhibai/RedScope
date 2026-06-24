@@ -1,13 +1,15 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from backend.config import get_settings
-from backend.database import init_db
 from backend.core.auth_middleware import auth_middleware
 from backend.core.error_handler import global_exception_handler, request_logging_middleware, logger
 from backend.core.rate_limiter import rate_limit_middleware
 from backend.core.audit_logger import audit_log_middleware
+from backend.database import get_db, init_db
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api import (
     auth, projects, scope, assets, scanning, findings, knowledge, plugins,
     reports, operational, terminal, manual_testing, baseline,
@@ -40,7 +42,7 @@ app.add_exception_handler(Exception, global_exception_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=settings.get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -93,3 +95,39 @@ async def health_check():
     all_ok = status.get("database") == "ok" and status.get("redis") == "ok"
     status["status"] = "ok" if all_ok else "degraded"
     return status
+
+
+@app.get("/api/search")
+async def global_search(q: str = "", db: AsyncSession = Depends(get_db)):
+    """Global search across projects, assets, findings, and knowledge base."""
+    from backend.models.project import Project
+    from backend.models.asset import Asset
+    from backend.models.finding import Finding
+    from backend.models.vuln_knowledge import VulnKnowledge
+
+    if not q or len(q) < 2:
+        return {"projects": [], "assets": [], "findings": [], "knowledge": []}
+
+    pattern = f"%{q}%"
+
+    projects = await db.execute(
+        select(Project).where(Project.name.ilike(pattern) | Project.client_name.ilike(pattern)).limit(5)
+    )
+    assets_result = await db.execute(
+        select(Asset).where(Asset.host.ilike(pattern) | Asset.application.ilike(pattern)).limit(5)
+    )
+    findings_result = await db.execute(
+        select(Finding).where(Finding.title.ilike(pattern)).limit(5)
+    )
+    knowledge_result = await db.execute(
+        select(VulnKnowledge).where(
+            VulnKnowledge.title.ilike(pattern) | VulnKnowledge.cve_id.ilike(pattern)
+        ).limit(5)
+    )
+
+    return {
+        "projects": [{"id": p.id, "name": p.name, "type": "project"} for p in projects.scalars()],
+        "assets": [{"id": a.id, "host": a.host, "project_id": a.project_id, "type": "asset"} for a in assets_result.scalars()],
+        "findings": [{"id": f.id, "title": f.title, "severity": f.severity, "project_id": f.project_id, "type": "finding"} for f in findings_result.scalars()],
+        "knowledge": [{"id": k.id, "title": k.title, "cve_id": k.cve_id, "type": "knowledge"} for k in knowledge_result.scalars()],
+    }

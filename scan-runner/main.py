@@ -8,7 +8,7 @@ import shlex
 import uuid
 from datetime import datetime
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 app = FastAPI(title="RedScope Scan Runner", version="1.0.0")
@@ -56,10 +56,10 @@ def _validate_image(image: str):
 
 
 @app.post("/jobs", response_model=JobResponse)
-async def create_job(req: JobRequest, request=None):
-    from fastapi import Request
+async def create_job(req: JobRequest, request: Request):
     import docker
 
+    _verify_secret(request)
     _validate_image(req.image)
 
     # Check concurrent job limit
@@ -84,6 +84,8 @@ async def create_job(req: JobRequest, request=None):
                     command=req.command,
                     name=container_name,
                     detach=True,
+                    # SECURITY: host network required for nmap/masscan to work properly.
+                    # Scanned containers can access host network — mitigated by read_only + cap_drop ALL.
                     network_mode="host",
                     mem_limit=req.memory_limit,
                     cpu_count=req.cpu_count,
@@ -128,7 +130,8 @@ async def create_job(req: JobRequest, request=None):
 
 
 @app.get("/jobs/{job_id}", response_model=JobResponse)
-async def get_job(job_id: str):
+async def get_job(job_id: str, request: Request):
+    _verify_secret(request)
     job = jobs.get(job_id)
     if not job:
         raise HTTPException(404, "Job not found")
@@ -142,8 +145,9 @@ async def get_job(job_id: str):
 
 
 @app.delete("/jobs/{job_id}")
-async def cancel_job(job_id: str):
+async def cancel_job(job_id: str, request: Request):
     import docker
+    _verify_secret(request)
     job = jobs.get(job_id)
     if not job:
         raise HTTPException(404, "Job not found")

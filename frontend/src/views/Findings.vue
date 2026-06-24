@@ -2,15 +2,34 @@
   <div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
       <h2>漏洞列表</h2>
-      <el-button type="primary" size="small" @click="showAdd = true"><el-icon><Plus /></el-icon> 手动录入</el-button>
+      <div style="display: flex; gap: 8px;">
+        <el-button v-if="selectedIds.length" size="small" @click="batchMarkFixed">批量标记已修复 ({{ selectedIds.length }})</el-button>
+        <el-button v-if="selectedIds.length" size="small" @click="batchMarkFP">批量标记误报 ({{ selectedIds.length }})</el-button>
+        <el-button type="primary" size="small" @click="showAdd = true"><el-icon><Plus /></el-icon> 手动录入</el-button>
+      </div>
     </div>
+
     <div class="stat-grid" style="margin-bottom: 16px;">
       <div class="stat-card critical"><div class="stat-label">严重</div><div class="stat-value">{{ stats.critical || 0 }}</div></div>
       <div class="stat-card" style="border-left: 3px solid var(--rs-warning);"><div class="stat-label">高危</div><div class="stat-value">{{ stats.high || 0 }}</div></div>
       <div class="stat-card info"><div class="stat-label">中危</div><div class="stat-value">{{ stats.medium || 0 }}</div></div>
       <div class="stat-card success"><div class="stat-label">修复率</div><div class="stat-value">{{ stats.fix_rate || 0 }}%</div></div>
     </div>
-    <el-table :data="findings" style="width: 100%;">
+
+    <!-- Filters -->
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <el-select v-model="filterSev" placeholder="等级" clearable size="small" style="width: 100px;" @change="load">
+        <el-option value="critical" label="严重" /><el-option value="high" label="高危" />
+        <el-option value="medium" label="中危" /><el-option value="low" label="低危" />
+      </el-select>
+      <el-select v-model="filterStatus" placeholder="修复状态" clearable size="small" style="width: 120px;" @change="load">
+        <el-option value="unfixed" label="未修复" /><el-option value="fixing" label="修复中" />
+        <el-option value="fixed" label="已修复" />
+      </el-select>
+    </div>
+
+    <el-table :data="filteredFindings" style="width: 100%;" @selection-change="onSelect" @row-click="openDetail">
+      <el-table-column type="selection" width="40" />
       <el-table-column prop="title" label="漏洞名称" min-width="250" />
       <el-table-column prop="severity" label="等级" width="90">
         <template #default="{ row }"><span class="severity-badge" :class="row.severity">{{ row.severity }}</span></template>
@@ -38,8 +57,47 @@
       <el-table-column prop="is_verified" label="已验证" width="80">
         <template #default="{ row }">{{ row.is_verified ? '✅' : '⏳' }}</template>
       </el-table-column>
+      <el-table-column label="操作" width="160">
+        <template #default="{ row }">
+          <el-button size="small" @click.stop="openDetail(row)">详情</el-button>
+          <el-button size="small" type="danger" @click.stop="deleteFinding(row)">删除</el-button>
+        </template>
+      </el-table-column>
     </el-table>
 
+    <!-- Finding Detail Drawer -->
+    <el-drawer v-model="showDetail" :title="detailFinding?.title" size="600px">
+      <div v-if="detailFinding" style="padding: 0 8px;">
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <span class="severity-badge" :class="detailFinding.severity">{{ detailFinding.severity }}</span>
+          <el-tag size="small">{{ detailFinding.vuln_type }}</el-tag>
+          <el-tag v-if="detailFinding.cvss_score" size="small" type="warning">CVSS {{ detailFinding.cvss_score }}</el-tag>
+        </div>
+
+        <h4 style="margin: 16px 0 8px; color: var(--rs-text-primary);">漏洞描述</h4>
+        <div style="font-size: 13px; white-space: pre-wrap; color: var(--rs-text-secondary);">{{ detailFinding.description || '无描述' }}</div>
+
+        <h4 style="margin: 16px 0 8px; color: var(--rs-text-primary);">复现步骤</h4>
+        <div style="font-size: 13px; white-space: pre-wrap; color: var(--rs-text-secondary);">{{ detailFinding.detail || '无复现步骤' }}</div>
+
+        <h4 style="margin: 16px 0 8px; color: var(--rs-text-primary);">修复建议</h4>
+        <div style="font-size: 13px; white-space: pre-wrap; color: var(--rs-text-secondary);">{{ detailFinding.solution || '无修复建议' }}</div>
+
+        <h4 style="margin: 16px 0 8px; color: var(--rs-text-primary);">修复状态</h4>
+        <div style="display: flex; gap: 8px;">
+          <el-button size="small" :type="detailFinding.fix_status === 'fixed' ? 'success' : ''" @click="updateStatus(detailFinding.id, 'fixed')">已修复</el-button>
+          <el-button size="small" :type="detailFinding.fix_status === 'fixing' ? 'warning' : ''" @click="updateStatus(detailFinding.id, 'fixing')">修复中</el-button>
+          <el-button size="small" :type="detailFinding.fix_status === 'unfixed' ? 'danger' : ''" @click="updateStatus(detailFinding.id, 'unfixed')">未修复</el-button>
+        </div>
+
+        <div v-if="detailFinding.evidence" style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px; color: var(--rs-text-primary);">证据</h4>
+          <pre style="font-size: 12px; background: var(--rs-bg-secondary); padding: 12px; border-radius: 6px; overflow: auto; max-height: 300px;">{{ JSON.stringify(detailFinding.evidence, null, 2) }}</pre>
+        </div>
+      </div>
+    </el-drawer>
+
+    <!-- Add Finding Dialog -->
     <el-dialog v-model="showAdd" title="手动录入漏洞" width="560px">
       <el-form :model="form" label-width="100px">
         <el-form-item label="漏洞名称" required><el-input v-model="form.title" /></el-form-item>
@@ -63,8 +121,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../stores/api'
 
 const route = useRoute()
@@ -72,12 +131,71 @@ const pid = route.params.id
 const findings = ref([])
 const stats = ref({})
 const showAdd = ref(false)
+const showDetail = ref(false)
+const detailFinding = ref(null)
+const selectedIds = ref([])
+const filterSev = ref('')
+const filterStatus = ref('')
 const form = ref({ title: '', vuln_type: 'sqli', severity: 'high', description: '', detail: '', solution: '' })
 
+const filteredFindings = computed(() => {
+  let list = findings.value
+  if (filterSev.value) list = list.filter(f => f.severity === filterSev.value)
+  if (filterStatus.value) list = list.filter(f => f.fix_status === filterStatus.value)
+  return list
+})
+
 const load = async () => {
-  const [res, st] = await Promise.all([api.get(`/projects/${pid}/findings`), api.get(`/projects/${pid}/findings/stats`)])
-  findings.value = res.items || []; stats.value = { ...st.severities, fix_rate: st.fix_rate }
+  try {
+    const [res, st] = await Promise.all([api.get(`/projects/${pid}/findings`), api.get(`/projects/${pid}/findings/stats`)])
+    findings.value = res.items || []
+    stats.value = { ...st.severities, fix_rate: st.fix_rate }
+  } catch (e) { ElMessage.error('加载漏洞列表失败') }
 }
-const addFinding = async () => { await api.post(`/projects/${pid}/findings`, form.value); showAdd.value = false; await load() }
+
+const addFinding = async () => {
+  await api.post(`/projects/${pid}/findings`, form.value)
+  showAdd.value = false
+  await load()
+}
+
+const openDetail = (row) => {
+  detailFinding.value = row
+  showDetail.value = true
+}
+
+const onSelect = (rows) => { selectedIds.value = rows.map(r => r.id) }
+
+const updateStatus = async (id, status) => {
+  await api.put(`/projects/${pid}/findings/${id}`, { fix_status: status })
+  detailFinding.value.fix_status = status
+  await load()
+}
+
+const deleteFinding = async (row) => {
+  await ElMessageBox.confirm(`确认删除漏洞「${row.title}」？此操作不可恢复。`, '删除确认', { type: 'warning' })
+  await api.delete(`/projects/${pid}/findings/${row.id}`)
+  ElMessage.success('已删除')
+  await load()
+}
+
+const batchMarkFixed = async () => {
+  await ElMessageBox.confirm(`确认将 ${selectedIds.value.length} 个漏洞标记为已修复？`, '批量操作', { type: 'info' })
+  for (const id of selectedIds.value) {
+    await api.put(`/projects/${pid}/findings/${id}`, { fix_status: 'fixed' })
+  }
+  ElMessage.success('已批量标记')
+  await load()
+}
+
+const batchMarkFP = async () => {
+  await ElMessageBox.confirm(`确认将 ${selectedIds.value.length} 个漏洞标记为误报？`, '批量操作', { type: 'warning' })
+  for (const id of selectedIds.value) {
+    await api.put(`/projects/${pid}/findings/${id}`, { is_false_positive: true })
+  }
+  ElMessage.success('已批量标记')
+  await load()
+}
+
 onMounted(load)
 </script>

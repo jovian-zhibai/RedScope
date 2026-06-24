@@ -70,6 +70,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import api from '../stores/api'
 
 const router = useRouter()
@@ -82,7 +83,7 @@ const loadProjects = async () => {
   try {
     const res = await api.get('/projects')
     projects.value = res.items || []
-  } catch (e) { /* empty */ }
+  } catch (e) { ElMessage.error('加载项目失败') }
 }
 
 const createProject = async () => {

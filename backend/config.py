@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from pydantic import model_validator
 from functools import lru_cache
+import warnings
 
 
 class Settings(BaseSettings):
@@ -15,6 +16,8 @@ class Settings(BaseSettings):
     secret_key: str = ""
     access_token_expire_minutes: int = 480
     algorithm: str = "HS256"
+
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     scan_output_dir: str = "/app/output"
     plugins_dir: str = "/app/plugins"
@@ -42,7 +45,15 @@ class Settings(BaseSettings):
                 self.debug = False
         if not self.secret_key:
             self.secret_key = "redscope-dev-only-do-not-use-in-production"
+            warnings.warn(
+                "\n⚠️  WARNING: 使用默认开发密钥！请设置 SECRET_KEY 环境变量。\n"
+                "   当前密钥仅适用于本地开发，切勿用于生产环境。\n",
+                stacklevel=2,
+            )
         return self
+
+    def get_cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
 
 @lru_cache

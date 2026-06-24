@@ -17,6 +17,11 @@
       <el-table-column prop="proxy_supported" label="代理" width="80">
         <template #default="{ row }">{{ row.proxy_supported ? '✅' : '❌' }}</template>
       </el-table-column>
+      <el-table-column label="启用" width="80">
+        <template #default="{ row }">
+          <el-switch :model-value="row.is_enabled !== false" @change="togglePlugin(row)" size="small" />
+        </template>
+      </el-table-column>
     </el-table>
   </div>
 </template>
@@ -28,5 +33,11 @@ import api from '../stores/api'
 const plugins = ref([])
 const load = async () => { const res = await api.get('/plugins'); plugins.value = res.items || [] }
 const reloadPlugins = async () => { const res = await api.post('/plugins/reload'); ElMessage.success(`已加载 ${res.count} 个插件`); await load() }
+const togglePlugin = async (row) => {
+  try {
+    await api.put(`/plugins/${row.id || row.name}/toggle`)
+    await load()
+  } catch (e) { ElMessage.error('操作失败') }
+}
 onMounted(load)
 </script>
