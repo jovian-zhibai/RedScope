@@ -74,8 +74,8 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/yourname/redscope.git
-cd redscope
+git clone https://github.com/jovian-zhibai/RedScope.git
+cd RedScope
 
 # 2. 配置环境变量（必须修改密码和密钥）
 cp .env.example .env
