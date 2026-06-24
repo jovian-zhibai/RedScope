@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, func
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, func
 from sqlalchemy.orm import relationship
 from backend.database import Base
 
@@ -35,8 +35,8 @@ class Team(Base):
 class TeamMember(Base):
     __tablename__ = "team_members"
 
-    team_id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     role = Column(String(20), default="member")
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
 
