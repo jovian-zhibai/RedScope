@@ -33,6 +33,7 @@ class Finding(Base):
     attck_techniques = Column(JSONB)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     project = relationship("Project", back_populates="findings")
     asset = relationship("Asset", back_populates="findings")

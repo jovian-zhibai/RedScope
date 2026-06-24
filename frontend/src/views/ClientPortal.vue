@@ -114,7 +114,7 @@ const findings = ref([])
 const reports = ref([])
 const selectedIds = ref([])
 
-const portalApi = axios.create({ baseURL: '/api/portal', timeout: 30000 })
+const portalApi = axios.create({ baseURL: '/api/v1/portal', timeout: 30000 })
 
 const doLogin = async () => {
   logging.value = true

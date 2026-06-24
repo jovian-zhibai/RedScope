@@ -15,7 +15,7 @@
       <div class="stat-card critical"><div class="stat-label">核心资产</div><div class="stat-value">{{ assets.filter(a => a.importance === 'critical').length }}</div></div>
     </div>
 
-    <el-table :data="displayAssets" style="width: 100%;" @row-click="openDetail">
+    <el-table :data="pagedAssets" style="width: 100%;" @row-click="openDetail">
       <el-table-column prop="host" label="主机" min-width="180" />
       <el-table-column prop="port" label="端口" width="80" />
       <el-table-column prop="application" label="应用" width="150" />
@@ -47,6 +47,8 @@
     </el-table>
 
     <!-- Asset Detail Drawer -->
+    <el-pagination v-if="displayAssets.length > pageSize" :current-page="currentPage" :page-size="pageSize" :total="displayAssets.length" @current-change="currentPage = $event" layout="prev, pager, next, total" style="margin-top: 12px; justify-content: flex-end;" />
+
     <el-drawer v-model="showDetail" :title="detailAsset?.host" size="500px">
       <div v-if="detailAsset" style="padding: 0 8px;">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
@@ -126,11 +128,21 @@ const searchText = ref('')
 const form = ref({ asset_type: 'ip', host: '', port: null, importance: 'normal' })
 
 const displayAssets = computed(() => {
-  if (!searchText.value) return assets.value
-  const q = searchText.value.toLowerCase()
-  return assets.value.filter(a =>
-    a.host?.toLowerCase().includes(q) || a.application?.toLowerCase().includes(q) || a.server?.toLowerCase().includes(q)
-  )
+  let list = assets.value
+  if (searchText.value) {
+    const q = searchText.value.toLowerCase()
+    list = list.filter(a =>
+      a.host?.toLowerCase().includes(q) || a.application?.toLowerCase().includes(q) || a.server?.toLowerCase().includes(q)
+    )
+  }
+  return list
+})
+
+const pageSize = ref(20)
+const currentPage = ref(1)
+const pagedAssets = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return displayAssets.value.slice(start, start + pageSize.value)
 })
 
 const load = async () => {

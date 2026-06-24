@@ -32,7 +32,7 @@ async def list_findings(
     db: AsyncSession = Depends(get_db),
 ):
     from backend.core.pagination import paginate
-    query = select(Finding).where(Finding.project_id == project_id).order_by(Finding.created_at.desc())
+    query = select(Finding).where(Finding.project_id == project_id, Finding.deleted_at == None).order_by(Finding.created_at.desc())
     if severity:
         query = query.where(Finding.severity == severity)
     if fix_status:
@@ -120,3 +120,14 @@ async def get_finding(project_id: int, finding_id: int, _=Depends(require_projec
         "attck_techniques": finding.attck_techniques,
         "created_at": finding.created_at.isoformat() if finding.created_at else None,
     }
+
+
+@router.delete("/{finding_id}")
+async def delete_finding(project_id: int, finding_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+    from datetime import datetime
+    finding = await db.get(Finding, finding_id)
+    if not finding or finding.project_id != project_id:
+        raise HTTPException(404, "漏洞不存在")
+    finding.deleted_at = datetime.now()
+    await db.flush()
+    return {"status": "deleted"}

@@ -28,7 +28,7 @@
       </el-select>
     </div>
 
-    <el-table :data="filteredFindings" style="width: 100%;" @selection-change="onSelect" @row-click="openDetail">
+    <el-table :data="pagedFindings" style="width: 100%;" @selection-change="onSelect" @row-click="openDetail">
       <el-table-column type="selection" width="40" />
       <el-table-column prop="title" label="漏洞名称" min-width="250" />
       <el-table-column prop="severity" label="等级" width="90">
@@ -66,6 +66,8 @@
     </el-table>
 
     <!-- Finding Detail Drawer -->
+    <el-pagination v-if="filteredFindings.length > pageSize" :current-page="currentPage" :page-size="pageSize" :total="filteredFindings.length" @current-change="currentPage = $event" layout="prev, pager, next, total" style="margin-top: 12px; justify-content: flex-end;" />
+
     <el-drawer v-model="showDetail" :title="detailFinding?.title" size="600px">
       <div v-if="detailFinding" style="padding: 0 8px;">
         <div style="display: flex; gap: 8px; margin-bottom: 16px;">
@@ -143,6 +145,13 @@ const filteredFindings = computed(() => {
   if (filterSev.value) list = list.filter(f => f.severity === filterSev.value)
   if (filterStatus.value) list = list.filter(f => f.fix_status === filterStatus.value)
   return list
+})
+
+const pageSize = ref(20)
+const currentPage = ref(1)
+const pagedFindings = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredFindings.value.slice(start, start + pageSize.value)
 })
 
 const load = async () => {

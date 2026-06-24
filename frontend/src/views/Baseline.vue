@@ -9,14 +9,14 @@
         <div style="color: var(--rs-text-secondary); margin: 8px 0;">{{ b.item_count }} 项检查</div>
         <div style="display: flex; gap: 8px;">
           <el-button size="small" @click="selectBaseline(b.key)">查看详情</el-button>
-          <el-button size="small" type="primary" @click="runBaseline(b.key)">执行检查</el-button>
+          <el-button size="small" type="primary" @click="openRunDialog(b.key, b.name)">执行检查</el-button>
         </div>
       </div>
     </div>
 
     <!-- Results -->
     <div v-if="scanResults.length" class="card" style="padding: 16px; margin-bottom: 16px;">
-      <h3 style="margin-bottom: 12px;">检查结果</h3>
+      <h3 style="margin-bottom: 12px;">检查结果 — {{ lastRunName }}</h3>
       <div class="stat-grid" style="margin-bottom: 12px;">
         <div class="stat-card success"><div class="stat-label">通过</div><div class="stat-value">{{ scanResults.filter(r => r.status === 'pass').length }}</div></div>
         <div class="stat-card critical"><div class="stat-label">未通过</div><div class="stat-value">{{ scanResults.filter(r => r.status === 'fail').length }}</div></div>
@@ -42,6 +42,31 @@
       </el-table>
     </div>
 
+    <!-- Run Dialog -->
+    <el-dialog v-model="showRun" :title="`执行基线检查 — ${runName}`" width="480px">
+      <el-form label-width="80px">
+        <el-form-item label="目标主机">
+          <el-input v-model="runTarget" placeholder="IP 地址 (如 192.168.1.100)" />
+        </el-form-item>
+        <el-form-item label="SSH 端口">
+          <el-input-number v-model="runPort" :min="1" :max="65535" />
+        </el-form-item>
+        <el-form-item label="认证方式">
+          <el-radio-group v-model="runAuthType">
+            <el-radio value="password">密码</el-radio>
+            <el-radio value="key">密钥</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="用户名"><el-input v-model="runUser" placeholder="root" /></el-form-item>
+        <el-form-item v-if="runAuthType === 'password'" label="密码"><el-input v-model="runPassword" type="password" show-password /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showRun = false">取消</el-button>
+        <el-button type="primary" @click="runBaseline" :loading="running">开始检查</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Detail Dialog -->
     <el-dialog v-model="showDetail" :title="detailName" width="800px">
       <el-table :data="detailItems" style="width: 100%;">
         <el-table-column prop="id" label="编号" width="100" />
@@ -64,7 +89,11 @@ import { ElMessage } from 'element-plus'
 import api from '../stores/api'
 
 const baselines = ref([]); const showDetail = ref(false); const detailName = ref(''); const detailItems = ref([])
-const scanResults = ref([])
+const scanResults = ref([]); const lastRunName = ref('')
+const showRun = ref(false); const running = ref(false)
+const runKey = ref(''); const runName = ref('')
+const runTarget = ref(''); const runPort = ref(22); const runAuthType = ref('password')
+const runUser = ref('root'); const runPassword = ref('')
 
 const load = async () => {
   try { const res = await api.get('/baseline/baselines'); baselines.value = res.items || [] }
@@ -76,15 +105,27 @@ const selectBaseline = async (key) => {
   detailName.value = res.name; detailItems.value = res.items || []; showDetail.value = true
 }
 
-const runBaseline = async (key) => {
-  ElMessage.info('正在执行基线检查...')
+const openRunDialog = (key, name) => {
+  runKey.value = key; runName.value = name; showRun.value = true
+}
+
+const runBaseline = async () => {
+  if (!runTarget.value) { ElMessage.warning('请输入目标主机 IP'); return }
+  running.value = true
   try {
-    const res = await api.post(`/baseline/baselines/${key}/run`)
+    const res = await api.post(`/baseline/baselines/${runKey.value}/run`, {
+      target: runTarget.value, port: runPort.value,
+      auth_type: runAuthType.value, username: runUser.value,
+      password: runPassword.value,
+    })
     scanResults.value = res.results || []
+    lastRunName.value = runName.value
+    showRun.value = false
     const failed = scanResults.value.filter(r => r.status === 'fail').length
     if (failed > 0) ElMessage.warning(`检查完成: ${failed} 项不合规`)
     else ElMessage.success('所有检查项均合规')
   } catch (e) { ElMessage.error('执行失败') }
+  finally { running.value = false }
 }
 
 onMounted(load)

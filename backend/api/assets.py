@@ -29,7 +29,7 @@ async def list_assets(
     db: AsyncSession = Depends(get_db),
 ):
     from backend.core.pagination import paginate
-    query = select(Asset).where(Asset.project_id == project_id).order_by(Asset.last_seen_at.desc())
+    query = select(Asset).where(Asset.project_id == project_id, Asset.deleted_at == None).order_by(Asset.last_seen_at.desc())
     if scope_status:
         query = query.where(Asset.scope_status == scope_status)
     if importance:
@@ -94,9 +94,10 @@ async def update_asset(project_id: int, asset_id: int, req: dict, _=Depends(requ
 
 @router.delete("/{asset_id}")
 async def delete_asset(project_id: int, asset_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+    from datetime import datetime
     asset = await db.get(Asset, asset_id)
     if not asset or asset.project_id != project_id:
         raise HTTPException(404, "资产不存在")
-    await db.delete(asset)
+    asset.deleted_at = datetime.now()
     await db.flush()
     return {"status": "deleted"}

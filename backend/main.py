@@ -52,26 +52,33 @@ app.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
 app.add_middleware(BaseHTTPMiddleware, dispatch=rate_limit_middleware)
 app.add_middleware(BaseHTTPMiddleware, dispatch=request_logging_middleware)
 
-app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
-app.include_router(projects.router, prefix="/api/projects", tags=["项目管理"])
-app.include_router(scope.router, prefix="/api/projects/{project_id}/scope", tags=["边界管理"])
-app.include_router(assets.router, prefix="/api/projects/{project_id}/assets", tags=["资产管理"])
-app.include_router(scanning.router, prefix="/api/projects/{project_id}/scans", tags=["扫描任务"])
-app.include_router(findings.router, prefix="/api/projects/{project_id}/findings", tags=["漏洞管理"])
-app.include_router(knowledge.router, prefix="/api/knowledge", tags=["漏洞情报"])
-app.include_router(plugins.router, prefix="/api/plugins", tags=["插件管理"])
-app.include_router(reports.router, prefix="/api/projects/{project_id}/reports", tags=["报告生成"])
-app.include_router(operational.router, prefix="/api/projects/{project_id}/ops", tags=["作战管理"])
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+except ImportError:
+    pass
+
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
+app.include_router(projects.router, prefix="/api/v1/projects", tags=["项目管理"])
+app.include_router(scope.router, prefix="/api/v1/projects/{project_id}/scope", tags=["边界管理"])
+app.include_router(assets.router, prefix="/api/v1/projects/{project_id}/assets", tags=["资产管理"])
+app.include_router(scanning.router, prefix="/api/v1/projects/{project_id}/scans", tags=["扫描任务"])
+app.include_router(findings.router, prefix="/api/v1/projects/{project_id}/findings", tags=["漏洞管理"])
+app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["漏洞情报"])
+app.include_router(plugins.router, prefix="/api/v1/plugins", tags=["插件管理"])
+app.include_router(reports.router, prefix="/api/v1/projects/{project_id}/reports", tags=["报告生成"])
+app.include_router(operational.router, prefix="/api/v1/projects/{project_id}/ops", tags=["作战管理"])
 app.include_router(terminal.router, prefix="/ws", tags=["终端"])
-app.include_router(manual_testing.router, prefix="/api/testing", tags=["手工测试"])
-app.include_router(baseline.router, prefix="/api/baseline", tags=["基线合规"])
-app.include_router(tenants.router, prefix="/api/tenants", tags=["多租户"])
-app.include_router(client_portal.router, prefix="/api/portal", tags=["客户门户"])
-app.include_router(redblue.router, prefix="/api/projects/{project_id}/redblue", tags=["红蓝对抗"])
-app.include_router(workflow.router, prefix="/api/workflow", tags=["工单审批"])
-app.include_router(wiring.router, prefix="/api", tags=["核心能力"])
+app.include_router(manual_testing.router, prefix="/api/v1/testing", tags=["手工测试"])
+app.include_router(baseline.router, prefix="/api/v1/baseline", tags=["基线合规"])
+app.include_router(tenants.router, prefix="/api/v1/tenants", tags=["多租户"])
+app.include_router(client_portal.router, prefix="/api/v1/portal", tags=["客户门户"])
+app.include_router(redblue.router, prefix="/api/v1/projects/{project_id}/redblue", tags=["红蓝对抗"])
+app.include_router(workflow.router, prefix="/api/v1/workflow", tags=["工单审批"])
+app.include_router(wiring.router, prefix="/api/v1", tags=["核心能力"])
 
 
+@app.get("/api/v1/health")
 @app.get("/api/health")
 async def health_check():
     from sqlalchemy import text
@@ -97,6 +104,7 @@ async def health_check():
     return status
 
 
+@app.get("/api/v1/search")
 @app.get("/api/search")
 async def global_search(q: str = "", db: AsyncSession = Depends(get_db)):
     """Global search across projects, assets, findings, and knowledge base."""

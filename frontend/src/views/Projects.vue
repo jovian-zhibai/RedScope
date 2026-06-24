@@ -7,7 +7,7 @@
       </el-button>
     </div>
 
-    <el-table :data="projects" style="width: 100%;" row-class-name="dark-row" @row-click="goToProject">
+    <el-table :data="pagedProjects" style="width: 100%;" row-class-name="dark-row" @row-click="goToProject">
       <el-table-column prop="name" label="项目名称" min-width="200" />
       <el-table-column prop="mode" label="模式" width="100">
         <template #default="{ row }">
@@ -31,6 +31,7 @@
         <template #default="{ row }">{{ row.created_at?.split('T')[0] }}</template>
       </el-table-column>
     </el-table>
+    <el-pagination v-if="projects.length > pageSize" :current-page="currentPage" :page-size="pageSize" :total="projects.length" @current-change="currentPage = $event" layout="prev, pager, next, total" style="margin-top: 12px; justify-content: flex-end;" />
 
     <el-dialog v-model="showCreate" title="新建项目" width="560px">
       <el-form :model="form" label-width="100px">
@@ -68,7 +69,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../stores/api'
@@ -78,6 +79,12 @@ const projects = ref([])
 const showCreate = ref(false)
 const creating = ref(false)
 const form = ref({ name: '', mode: 'combat', description: '', client_name: '', auth_start_date: '', auth_end_date: '' })
+const pageSize = ref(20)
+const currentPage = ref(1)
+const pagedProjects = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return projects.value.slice(start, start + pageSize.value)
+})
 
 const loadProjects = async () => {
   try {

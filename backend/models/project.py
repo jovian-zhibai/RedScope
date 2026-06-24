@@ -29,6 +29,7 @@ class Project(Base):
     sensitive_data_policy = Column(String(20), default="mask")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     creator = relationship("User", back_populates="projects_created")
     scope_rules = relationship("ScopeRule", back_populates="project", cascade="all, delete-orphan")

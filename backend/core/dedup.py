@@ -46,8 +46,8 @@ def dedup_findings(db: Session, project_id: int) -> dict:
             if dup.found_by and dup.found_by not in (primary.found_by or ""):
                 primary.found_by = f"{primary.found_by},{dup.found_by}"
 
-            # Mark duplicate
-            dup.is_false_positive = True
+            # Mark as duplicate (NOT false positive — dedup != false positive)
+            dup.fix_status = "merged"
             dup.description = f"[已合并到 #{primary.id}] {dup.description or ''}"
             merged_count += 1
 

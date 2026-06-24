@@ -35,16 +35,24 @@ class ProjectUpdate(BaseModel):
 
 @router.get("")
 async def list_projects(status: str | None = None, db: AsyncSession = Depends(get_db)):
-    query = select(Project).order_by(Project.updated_at.desc())
+    from sqlalchemy.orm import selectinload
+
+    query = select(
+        Project,
+        func.count(Asset.id.distinct()).label("asset_count"),
+        func.count(Finding.id.distinct()).label("finding_count"),
+    ).outerjoin(Asset, Asset.project_id == Project.id).outerjoin(
+        Finding, Finding.project_id == Project.id
+    ).group_by(Project.id).order_by(Project.updated_at.desc())
+
     if status:
         query = query.where(Project.status == status)
+
     result = await db.execute(query)
-    projects = result.scalars().all()
+    rows = result.all()
 
     items = []
-    for p in projects:
-        asset_count = await db.scalar(select(func.count()).where(Asset.project_id == p.id))
-        finding_count = await db.scalar(select(func.count()).where(Finding.project_id == p.id))
+    for p, asset_count, finding_count in rows:
         items.append({
             "id": p.id, "name": p.name, "mode": p.mode, "status": p.status,
             "client_name": p.client_name, "description": p.description,

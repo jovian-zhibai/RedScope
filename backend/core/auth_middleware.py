@@ -8,9 +8,14 @@ settings = get_settings()
 
 PUBLIC_PATHS = {
     "/api/health",
+    "/api/v1/health",
     "/api/auth/login",
     "/api/auth/register",
+    "/api/v1/auth/login",
+    "/api/v1/auth/register",
     "/api/portal/login",
+    "/api/v1/portal/login",
+    "/metrics",
     "/docs",
     "/openapi.json",
     "/redoc",

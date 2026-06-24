@@ -30,6 +30,7 @@ class Asset(Base):
     last_seen_at = Column(DateTime(timezone=True), server_default=func.now())
     auth_config = Column(JSONB)
     tags = Column(JSONB, default=list)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     project = relationship("Project", back_populates="assets")
     findings = relationship("Finding", back_populates="asset")

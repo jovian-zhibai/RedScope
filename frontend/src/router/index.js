@@ -18,6 +18,7 @@ const routes = [
   { path: '/users', name: 'Users', component: () => import('../views/Users.vue'), meta: { title: '用户管理' } },
   { path: '/tenants', name: 'Tenants', component: () => import('../views/Tenants.vue'), meta: { title: '租户管理' } },
   { path: '/profile', name: 'Profile', component: () => import('../views/Profile.vue'), meta: { title: '个人设置' } },
+  { path: '/notifications', name: 'Notifications', component: () => import('../views/Notifications.vue'), meta: { title: '通知设置' } },
   { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { title: '登录', noAuth: true, noLayout: true } },
   { path: '/portal', name: 'ClientPortal', component: () => import('../views/ClientPortal.vue'), meta: { title: '客户门户', noAuth: true, noLayout: true } },
 ]

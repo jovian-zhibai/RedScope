@@ -14,6 +14,8 @@ def parse_output(engine_name: str, output_format: str, output_dir: str, output_p
         "httpx": parse_httpx,
         "sqlmap": parse_sqlmap,
         "dirsearch": parse_dirsearch,
+        "afrog": parse_afrog,
+        "fscan": parse_fscan,
     }
     parser = parsers.get(engine_name)
     if not parser:
@@ -255,3 +257,92 @@ def _guess_vuln_type(tags, name: str) -> str:
         if any(kw in combined for kw in keywords):
             return vuln_type
     return "other"
+
+
+def parse_afrog(file_path: str, output_dir: str) -> list[dict]:
+    """Parse afrog JSON output — similar to nuclei but different field names."""
+    results = []
+    try:
+        with open(file_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                url = item.get("target", item.get("url", ""))
+                poc_id = item.get("pocId", item.get("poc_id", ""))
+                severity = item.get("severity", "info").lower()
+                vuln_name = item.get("vulName", item.get("name", poc_id))
+                result_status = item.get("result", "")
+
+                if result_status in ("failed", "false"):
+                    continue
+
+                results.append({
+                    "title": f"{vuln_name} - {url}",
+                    "vuln_type": _guess_vuln_type([], vuln_name),
+                    "severity": severity,
+                    "description": f"PoC: {poc_id}",
+                    "detail": f"Target: {url}\nPoC ID: {poc_id}\nResult: {result_status}",
+                    "host": url,
+                    "dedup_hash": _dedup_hash("afrog", url, poc_id),
+                })
+    except Exception:
+        pass
+    return results
+
+
+def parse_fscan(file_path: str, output_dir: str) -> list[dict]:
+    """Parse fscan text output — line-based mixed asset/vuln results."""
+    results = []
+    result_file = Path(output_dir) / "result.txt"
+    if not result_file.exists():
+        result_file = Path(file_path)
+    if not result_file.exists():
+        return []
+
+    try:
+        content = result_file.read_text(errors="replace")
+        for line in content.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            if "[+]" in line and ("open" in line.lower() or "alive" in line.lower()):
+                parts = line.split()
+                for p in parts:
+                    if ":" in p and not p.startswith("["):
+                        host_port = p.split(":")
+                        if len(host_port) == 2:
+                            try:
+                                port = int(host_port[1])
+                                results.append({
+                                    "type": "asset",
+                                    "host": host_port[0],
+                                    "port": port,
+                                    "asset_type": "ip",
+                                    "title": f"{host_port[0]}:{port} open",
+                                    "severity": "info",
+                                    "dedup_hash": _dedup_hash("fscan", host_port[0], str(port)),
+                                })
+                            except ValueError:
+                                pass
+
+            elif any(tag in line for tag in ["[+]", "[*]", "vuln", "MS17", "CVE", "poc"]):
+                if "open" not in line.lower() and "alive" not in line.lower():
+                    severity = "high" if any(s in line for s in ["MS17", "CVE", "RCE"]) else "medium"
+                    results.append({
+                        "title": line[:200],
+                        "vuln_type": "other",
+                        "severity": severity,
+                        "detail": line,
+                        "found_by": "fscan",
+                        "dedup_hash": _dedup_hash("fscan", line[:100]),
+                    })
+    except Exception:
+        pass
+    return results

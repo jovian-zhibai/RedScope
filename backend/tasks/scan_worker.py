@@ -152,26 +152,66 @@ def run_scan_task(self, scan_task_id: int):
 
 def _parse_results(db: Session, plugin: PluginConfig, output_dir: str, project_id: int) -> list:
     from backend.parsers.builtin import parse_output
-    findings_data = parse_output(plugin.name, plugin.output_format, output_dir, plugin.output_path)
-    created = []
-    for f in findings_data:
-        finding = Finding(
-            project_id=project_id,
-            title=f.get("title", "Unknown"),
-            vuln_type=f.get("vuln_type"),
-            severity=f.get("severity", "info"),
-            cvss_score=f.get("cvss_score"),
-            description=f.get("description"),
-            detail=f.get("detail"),
-            solution=f.get("solution"),
-            found_by=plugin.name,
-            evidence=f.get("evidence"),
-            dedup_hash=f.get("dedup_hash"),
-        )
-        db.add(finding)
-        created.append(finding)
+    parsed_data = parse_output(plugin.name, plugin.output_format, output_dir, plugin.output_path)
+    created_findings = []
+    for f in parsed_data:
+        if f.get("type") == "asset":
+            existing = db.execute(
+                select(Asset).where(
+                    Asset.project_id == project_id,
+                    Asset.host == f.get("host", ""),
+                    Asset.port == f.get("port"),
+                )
+            ).scalar_one_or_none()
+            if existing:
+                if f.get("product"):
+                    existing.application = f["product"]
+                if f.get("version"):
+                    existing.app_version = f["version"]
+                if f.get("service"):
+                    existing.server = f["service"]
+                if f.get("server"):
+                    existing.server = f["server"]
+                if f.get("url"):
+                    existing.url = f["url"]
+                if f.get("tech_stack"):
+                    existing.fingerprint_raw = f["tech_stack"]
+                existing.last_seen_at = datetime.now()
+                existing.discovered_by = plugin.name
+            else:
+                asset = Asset(
+                    project_id=project_id,
+                    asset_type=f.get("asset_type", "ip"),
+                    host=f.get("host", ""),
+                    port=f.get("port"),
+                    protocol=f.get("protocol"),
+                    url=f.get("url"),
+                    server=f.get("service") or f.get("server"),
+                    application=f.get("product"),
+                    app_version=f.get("version"),
+                    fingerprint_raw=f.get("tech_stack"),
+                    discovered_by=plugin.name,
+                    is_alive=True,
+                )
+                db.add(asset)
+        else:
+            finding = Finding(
+                project_id=project_id,
+                title=f.get("title", "Unknown"),
+                vuln_type=f.get("vuln_type"),
+                severity=f.get("severity", "info"),
+                cvss_score=f.get("cvss_score"),
+                description=f.get("description"),
+                detail=f.get("detail"),
+                solution=f.get("solution"),
+                found_by=plugin.name,
+                evidence=f.get("evidence"),
+                dedup_hash=f.get("dedup_hash"),
+            )
+            db.add(finding)
+            created_findings.append(finding)
     db.commit()
-    return created
+    return created_findings
 
 
 @celery_app.task(name="intel_sync")

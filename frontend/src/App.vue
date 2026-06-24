@@ -26,6 +26,9 @@
         <router-link to="/users" class="nav-item" active-class="active">
           <el-icon><User /></el-icon> 用户管理
         </router-link>
+        <router-link to="/notifications" class="nav-item" active-class="active">
+          <el-icon><Bell /></el-icon> 通知设置
+        </router-link>
         <router-link to="/tenants" class="nav-item" active-class="active">
           <el-icon><OfficeBuilding /></el-icon> 租户管理
         </router-link>
@@ -118,10 +121,19 @@
       </main>
       <div v-if="showTerminal" class="terminal-panel">
         <div class="terminal-header">
-          <span>终端</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span v-for="(s, i) in termSessions" :key="s"
+              style="cursor: pointer; padding: 2px 8px; border-radius: 3px; font-size: 11px;"
+              :style="{ background: activeSession === s ? 'var(--rs-accent)' : 'transparent', color: activeSession === s ? '#fff' : 'var(--rs-text-secondary)' }"
+              @click="activeSession = s">
+              {{ s }}
+              <span v-if="termSessions.length > 1" style="margin-left: 4px; opacity: 0.6;" @click.stop="closeSession(i)">×</span>
+            </span>
+            <span style="cursor: pointer; font-size: 14px; color: var(--rs-text-secondary);" @click="addSession">+</span>
+          </div>
           <el-button size="small" text @click="showTerminal = false">✕</el-button>
         </div>
-        <TerminalPanel :session-id="'main'" />
+        <TerminalPanel :key="activeSession" :session-id="activeSession" />
       </div>
       <div v-if="!showTerminal" class="terminal-toggle" @click="showTerminal = true">
         ▲ 终端 (Ctrl+`)
@@ -139,6 +151,28 @@ import api from './stores/api'
 
 const router = useRouter()
 const showTerminal = ref(false)
+const termSessions = ref(['main'])
+const activeSession = ref('main')
+let sessionCounter = 1
+
+const addSession = () => {
+  sessionCounter++
+  const name = `shell-${sessionCounter}`
+  termSessions.value.push(name)
+  activeSession.value = name
+}
+
+const closeSession = (index) => {
+  const removed = termSessions.value.splice(index, 1)
+  if (activeSession.value === removed[0]) {
+    activeSession.value = termSessions.value[Math.min(index, termSessions.value.length - 1)] || 'main'
+  }
+  if (termSessions.value.length === 0) {
+    termSessions.value = ['main']
+    activeSession.value = 'main'
+  }
+}
+
 const searchQuery = ref('')
 const showSearchResults = ref(false)
 const searchResults = ref({ projects: [], assets: [], findings: [], knowledge: [] })

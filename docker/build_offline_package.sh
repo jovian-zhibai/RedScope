@@ -45,6 +45,7 @@ docker-compose build
 # Save project images
 docker save redscope-backend:latest -o "$BUILD_DIR/$PACKAGE_NAME/images/backend.tar"
 docker save redscope-frontend:latest -o "$BUILD_DIR/$PACKAGE_NAME/images/frontend.tar"
+docker save redscope-scan-runner:latest -o "$BUILD_DIR/$PACKAGE_NAME/images/scan-runner.tar" 2>/dev/null || echo "  (scan-runner 镜像需要先 build)"
 
 # Save dependency images
 echo "  拉取并导出依赖镜像..."
@@ -57,6 +58,8 @@ IMAGES=(
     "projectdiscovery/httpx:v1.6.9"
     "paoloo/sqlmap:latest"
     "cyal1/dirsearch:latest"
+    "ghcr.io/zan8in/afrog:latest"
+    "shadowlianmc/fscan:latest"
 )
 
 for img in "${IMAGES[@]}"; do
