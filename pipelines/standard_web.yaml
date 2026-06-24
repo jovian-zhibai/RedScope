@@ -1,0 +1,26 @@
+name: "标准Web渗透"
+description: "子域名发现 → HTTP探活 → 漏洞扫描 + 目录扫描"
+
+nodes:
+  - id: "1"
+    plugin: subfinder
+    config: {}
+  - id: "2"
+    plugin: httpx
+    config: {}
+  - id: "3"
+    plugin: nuclei
+    config:
+      severity: "critical,high,medium"
+  - id: "4"
+    plugin: dirsearch
+    config:
+      extensions: "php,asp,aspx,jsp,html"
+
+edges:
+  - from: "1"
+    to: "2"
+  - from: "2"
+    to: "3"
+  - from: "2"
+    to: "4"

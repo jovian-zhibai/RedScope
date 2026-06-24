@@ -1,0 +1,39 @@
+plugin:
+  name: dirsearch
+  display_name: "Dirsearch"
+  version: "0.4.3"
+  description: "Web目录与文件暴力扫描"
+  category: recon
+  language: Python
+
+  docker:
+    image: "cyal1/dirsearch:latest"
+
+  inputs:
+    - name: url
+      type: string
+      required: true
+      description: "目标URL"
+    - name: extensions
+      type: string
+      required: false
+      default: "php,asp,aspx,jsp,html,js,json"
+      description: "扩展名"
+    - name: extra_args
+      type: string
+      required: false
+
+  command: "dirsearch -u {url} -e {extensions} {extra_args} --format=json -o /output/result.json"
+
+  output:
+    format: json
+    path: "/output/result.json"
+    parser: "parsers/builtin/dirsearch_parser.py"
+
+  provides:
+    - directories
+    - sensitive_files
+
+  proxy:
+    supported: true
+    flag: "--proxy socks5://{proxy_url}"

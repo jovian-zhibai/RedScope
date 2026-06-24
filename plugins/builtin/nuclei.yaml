@@ -1,0 +1,44 @@
+plugin:
+  name: nuclei
+  display_name: "Nuclei"
+  version: "3.3.8"
+  description: "基于模板的快速漏洞扫描器"
+  category: vuln_scan
+  language: Go
+
+  docker:
+    image: "projectdiscovery/nuclei:v3.3.8"
+
+  inputs:
+    - name: target
+      type: string
+      required: true
+      description: "扫描目标 (URL/域名/IP)"
+    - name: severity
+      type: select
+      options: ["critical", "high", "medium", "low", "info", "critical,high", "critical,high,medium"]
+      default: "critical,high,medium"
+      description: "漏洞等级过滤"
+    - name: tags
+      type: string
+      required: false
+      description: "模板标签过滤 (如 cve,rce,sqli)"
+    - name: extra_args
+      type: string
+      required: false
+      description: "额外参数"
+
+  command: "nuclei -u {target} -severity {severity} -tags {tags} {extra_args} -jsonl -o /output/result.jsonl"
+
+  output:
+    format: jsonl
+    path: "/output/result.jsonl"
+    parser: "parsers/builtin/nuclei_parser.py"
+
+  provides:
+    - vuln_info
+    - cve_match
+
+  proxy:
+    supported: true
+    flag: "-proxy socks5://{proxy_url}"

@@ -1,0 +1,39 @@
+plugin:
+  name: afrog
+  display_name: "Afrog"
+  version: "3.0.9"
+  description: "指纹识别+漏洞验证一体化扫描器，国产软件覆盖好"
+  category: vuln_scan
+  language: Go
+
+  docker:
+    image: "ghcr.io/zan8in/afrog:latest"
+
+  inputs:
+    - name: target
+      type: string
+      required: true
+      description: "扫描目标 (URL/IP)"
+    - name: severity
+      type: select
+      options: ["critical", "high", "medium", "low", "critical,high", "critical,high,medium"]
+      default: "critical,high,medium"
+      description: "漏洞等级过滤"
+    - name: extra_args
+      type: string
+      required: false
+
+  command: "afrog -t {target} -severity {severity} {extra_args} -json -o /output/result.json"
+
+  output:
+    format: json
+    path: "/output/result.json"
+    parser: "parsers/builtin/afrog_parser.py"
+
+  provides:
+    - vuln_info
+    - fingerprint
+
+  proxy:
+    supported: true
+    flag: "-proxy socks5://{proxy_url}"

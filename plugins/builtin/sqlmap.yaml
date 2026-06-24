@@ -1,0 +1,44 @@
+plugin:
+  name: sqlmap
+  display_name: "SQLMap"
+  version: "1.8"
+  description: "自动化SQL注入检测与利用"
+  category: vuln_scan
+  language: Python
+
+  docker:
+    image: "paoloo/sqlmap:latest"
+
+  inputs:
+    - name: url
+      type: string
+      required: true
+      description: "目标URL (含参数)"
+    - name: level
+      type: select
+      options: ["1", "2", "3", "4", "5"]
+      default: "2"
+      description: "测试等级"
+    - name: risk
+      type: select
+      options: ["1", "2", "3"]
+      default: "1"
+      description: "风险等级"
+    - name: extra_args
+      type: string
+      required: false
+
+  command: "sqlmap -u \"{url}\" --level={level} --risk={risk} --batch {extra_args} --output-dir=/output"
+
+  output:
+    format: text
+    path: "/output/"
+    parser: "parsers/builtin/sqlmap_parser.py"
+
+  provides:
+    - sqli_vuln
+    - database_info
+
+  proxy:
+    supported: true
+    flag: "--proxy=socks5://{proxy_url}"

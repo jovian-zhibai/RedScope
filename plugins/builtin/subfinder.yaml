@@ -1,0 +1,32 @@
+plugin:
+  name: subfinder
+  display_name: "Subfinder"
+  version: "2.6.7"
+  description: "被动子域名发现工具"
+  category: recon
+  language: Go
+
+  docker:
+    image: "projectdiscovery/subfinder:v2.6.7"
+
+  inputs:
+    - name: domain
+      type: string
+      required: true
+      description: "目标域名"
+    - name: extra_args
+      type: string
+      required: false
+
+  command: "subfinder -d {domain} {extra_args} -o /output/subdomains.txt"
+
+  output:
+    format: text
+    path: "/output/subdomains.txt"
+    parser: "parsers/builtin/line_parser.py"
+
+  provides:
+    - subdomains
+
+  proxy:
+    supported: false

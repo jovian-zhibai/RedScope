@@ -1,0 +1,257 @@
+"""Built-in parsers: convert raw tool output to standardized findings."""
+
+import hashlib
+import json
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+def parse_output(engine_name: str, output_format: str, output_dir: str, output_path: str) -> list[dict]:
+    parsers = {
+        "nmap": parse_nmap,
+        "nuclei": parse_nuclei,
+        "subfinder": parse_subfinder,
+        "httpx": parse_httpx,
+        "sqlmap": parse_sqlmap,
+        "dirsearch": parse_dirsearch,
+    }
+    parser = parsers.get(engine_name)
+    if not parser:
+        return parse_generic(output_dir, output_path, output_format)
+
+    full_path = str(Path(output_dir) / Path(output_path).name) if not Path(output_path).is_absolute() else output_path.replace("/output", output_dir)
+    return parser(full_path, output_dir)
+
+
+def _dedup_hash(*args) -> str:
+    return hashlib.md5("|".join(str(a) for a in args).encode()).hexdigest()
+
+
+def parse_nmap(file_path: str, output_dir: str) -> list[dict]:
+    results = []
+    try:
+        tree = ET.parse(file_path)
+        root = tree.getroot()
+        for host in root.findall(".//host"):
+            addr_el = host.find("address")
+            if addr_el is None:
+                continue
+            addr = addr_el.get("addr", "")
+            for port in host.findall(".//port"):
+                state = port.find("state")
+                if state is None or state.get("state") != "open":
+                    continue
+                portid = port.get("portid", "")
+                protocol = port.get("protocol", "tcp")
+                service = port.find("service")
+                svc_name = service.get("name", "") if service is not None else ""
+                svc_product = service.get("product", "") if service is not None else ""
+                svc_version = service.get("version", "") if service is not None else ""
+                results.append({
+                    "type": "asset",
+                    "host": addr,
+                    "port": int(portid),
+                    "protocol": protocol,
+                    "service": svc_name,
+                    "product": svc_product,
+                    "version": svc_version,
+                    "title": f"{addr}:{portid} - {svc_name} {svc_product}",
+                    "severity": "info",
+                    "dedup_hash": _dedup_hash("nmap", addr, portid),
+                })
+    except Exception:
+        pass
+    return results
+
+
+def parse_nuclei(file_path: str, output_dir: str) -> list[dict]:
+    results = []
+    try:
+        with open(file_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                host = item.get("host", item.get("matched-at", ""))
+                template_id = item.get("template-id", "")
+                info = item.get("info", {})
+                severity = info.get("severity", "info").lower()
+                name = info.get("name", template_id)
+                desc = info.get("description", "")
+                tags = info.get("tags", [])
+                reference = info.get("reference", [])
+                matcher_name = item.get("matcher-name", "")
+                cve = ""
+                for tag in (tags if isinstance(tags, list) else tags.split(",")):
+                    if tag.upper().startswith("CVE-"):
+                        cve = tag.upper()
+                        break
+
+                results.append({
+                    "title": f"{name} - {host}",
+                    "vuln_type": _guess_vuln_type(tags, name),
+                    "severity": severity,
+                    "description": desc,
+                    "detail": f"Template: {template_id}\nMatcher: {matcher_name}\nHost: {host}",
+                    "solution": "\n".join(reference) if isinstance(reference, list) else str(reference),
+                    "evidence": {
+                        "request": item.get("request", ""),
+                        "response": item.get("response", "")[:2000],
+                        "curl_command": item.get("curl-command", ""),
+                    },
+                    "host": host,
+                    "matched_cve": cve,
+                    "dedup_hash": _dedup_hash("nuclei", host, template_id),
+                })
+    except Exception:
+        pass
+    return results
+
+
+def parse_subfinder(file_path: str, output_dir: str) -> list[dict]:
+    results = []
+    try:
+        with open(file_path) as f:
+            for line in f:
+                domain = line.strip()
+                if domain:
+                    results.append({
+                        "type": "asset",
+                        "host": domain,
+                        "asset_type": "subdomain",
+                        "title": f"子域名发现: {domain}",
+                        "severity": "info",
+                        "dedup_hash": _dedup_hash("subfinder", domain),
+                    })
+    except Exception:
+        pass
+    return results
+
+
+def parse_httpx(file_path: str, output_dir: str) -> list[dict]:
+    results = []
+    try:
+        with open(file_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                url = item.get("url", item.get("input", ""))
+                status = item.get("status_code", 0)
+                title = item.get("title", "")
+                tech = item.get("tech", [])
+                webserver = item.get("webserver", "")
+                host = item.get("host", url)
+
+                results.append({
+                    "type": "asset",
+                    "host": host,
+                    "url": url,
+                    "status_code": status,
+                    "title": f"{url} [{status}] {title}",
+                    "server": webserver,
+                    "tech_stack": tech,
+                    "severity": "info",
+                    "dedup_hash": _dedup_hash("httpx", url),
+                })
+    except Exception:
+        pass
+    return results
+
+
+def parse_sqlmap(file_path: str, output_dir: str) -> list[dict]:
+    results = []
+    target_dir = Path(output_dir)
+    try:
+        for log_file in target_dir.rglob("log"):
+            content = log_file.read_text(errors="replace")
+            if "is vulnerable" in content.lower() or "injectable" in content.lower():
+                parts = str(log_file.parent.name)
+                results.append({
+                    "title": f"SQL注入漏洞 - {parts}",
+                    "vuln_type": "sqli",
+                    "severity": "high",
+                    "description": "SQLMap检测到SQL注入漏洞",
+                    "detail": content[:4000],
+                    "solution": "使用参数化查询,对用户输入进行严格过滤和转义",
+                    "evidence": {"raw_log": content[:2000]},
+                    "dedup_hash": _dedup_hash("sqlmap", parts),
+                })
+    except Exception:
+        pass
+    return results
+
+
+def parse_dirsearch(file_path: str, output_dir: str) -> list[dict]:
+    results = []
+    try:
+        with open(file_path) as f:
+            data = json.load(f)
+
+        entries = data if isinstance(data, list) else data.get("results", [])
+        for item in entries:
+            url = item.get("url", "")
+            status = item.get("status", 0)
+            if status in (200, 301, 302, 403):
+                severity = "info"
+                title = f"目录发现: {url} [{status}]"
+                path = item.get("path", url)
+                sensitive_patterns = [".git", ".env", ".bak", "backup", "admin", "config",
+                                      "phpinfo", ".sql", ".log", "wp-admin", ".svn"]
+                for pat in sensitive_patterns:
+                    if pat in path.lower():
+                        severity = "medium"
+                        title = f"敏感文件发现: {url} [{status}]"
+                        break
+
+                results.append({
+                    "title": title,
+                    "vuln_type": "info_leak" if severity != "info" else "directory",
+                    "severity": severity,
+                    "description": f"发现路径 {path}, HTTP状态码 {status}",
+                    "host": url,
+                    "dedup_hash": _dedup_hash("dirsearch", url),
+                })
+    except Exception:
+        pass
+    return results
+
+
+def parse_generic(output_dir: str, output_path: str, fmt: str) -> list[dict]:
+    full = Path(output_dir) / Path(output_path).name
+    if not full.exists():
+        return []
+    content = full.read_text(errors="replace")
+    return [{"title": f"Raw output from {output_path}", "detail": content[:4000], "severity": "info"}]
+
+
+def _guess_vuln_type(tags, name: str) -> str:
+    name_lower = name.lower()
+    tag_str = ",".join(tags) if isinstance(tags, list) else str(tags)
+    combined = f"{name_lower} {tag_str}".lower()
+    mapping = {
+        "sqli": ["sqli", "sql-injection", "sql injection"],
+        "xss": ["xss", "cross-site scripting"],
+        "rce": ["rce", "remote-code-execution", "command-injection"],
+        "ssrf": ["ssrf", "server-side request"],
+        "lfi": ["lfi", "local-file-inclusion", "file-inclusion"],
+        "file_upload": ["file-upload", "upload"],
+        "xxe": ["xxe", "xml-external"],
+        "auth_bypass": ["auth-bypass", "authentication-bypass", "unauth"],
+        "info_leak": ["info-disclosure", "information-disclosure", "exposure", "config"],
+        "deserialization": ["deserialization", "deserialize"],
+    }
+    for vuln_type, keywords in mapping.items():
+        if any(kw in combined for kw in keywords):
+            return vuln_type
+    return "other"

@@ -1,0 +1,187 @@
+"""Scan worker: executes scan tasks asynchronously via Celery."""
+
+import asyncio
+import json
+from datetime import datetime
+from pathlib import Path
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from backend.tasks.celery_app import celery_app
+from backend.config import get_settings
+from backend.database_sync import SyncSession
+from backend.core.plugin_manager import plugin_manager, PluginConfig
+from backend.core.engine_orchestrator import EngineOrchestrator
+from backend.core.boundary_checker import BoundaryChecker
+from backend.models.project import Project, ScopeRule
+from backend.models.scan_task import ScanTask, EngineRun
+from backend.models.asset import Asset
+from backend.models.finding import Finding
+
+settings = get_settings()
+
+plugin_manager.load_all()
+
+
+def _import_parser(parser_path: str):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("parser", parser_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@celery_app.task(bind=True, name="run_scan_task")
+def run_scan_task(self, scan_task_id: int):
+    with SyncSession() as db:
+        task = db.get(ScanTask, scan_task_id)
+        if not task:
+            return {"error": "Task not found"}
+
+        task.status = "running"
+        task.started_at = datetime.now()
+        db.commit()
+
+        project = db.get(Project, task.project_id)
+        rules = db.execute(
+            select(ScopeRule).where(ScopeRule.project_id == task.project_id)
+        ).scalars().all()
+        checker = BoundaryChecker(project, rules)
+
+        engines = task.engines or ["nuclei"]
+        targets = task.target_assets or []
+        total_vulns = 0
+
+        for engine_name in engines:
+            plugin = plugin_manager.get_plugin(engine_name)
+            if not plugin:
+                continue
+
+            engine_run = EngineRun(
+                scan_task_id=task.id,
+                engine_name=engine_name,
+                status="running",
+                started_at=datetime.now(),
+            )
+            db.add(engine_run)
+            db.commit()
+
+            try:
+                orchestrator = EngineOrchestrator()
+                from backend.core.proxy_router import ProxyRouter
+                proxy_router = ProxyRouter(db, task.project_id)
+
+                for i, target in enumerate(targets):
+                    check = checker.check_target(target)
+                    if not check.allowed:
+                        continue
+
+                    proxy_url = None
+                    route = proxy_router.get_route(target)
+                    if route:
+                        proxy_url = route.proxy_url
+
+                    params = {"target": target, "url": target, "domain": target}
+                    result = asyncio.run(
+                        orchestrator.run_engine(plugin, params, proxy_url=proxy_url, task_id=f"{task.id}_{engine_name}_{i}")
+                    )
+
+                    if result.success and result.output_path:
+                        findings = _parse_results(db, plugin, result.output_path, task.project_id)
+                        total_vulns += len(findings)
+
+                    task.scanned_count = i + 1
+                    task.progress = int((i + 1) / len(targets) * 100)
+                    db.commit()
+                    self.update_state(state="PROGRESS", meta={"progress": task.progress})
+
+                engine_run.status = "completed"
+                engine_run.vulns_found = total_vulns
+                engine_run.finished_at = datetime.now()
+
+            except Exception as e:
+                engine_run.status = "failed"
+                engine_run.error_message = str(e)[:2000]
+                engine_run.finished_at = datetime.now()
+
+            db.commit()
+
+        task.status = "completed"
+        task.vulns_found = total_vulns
+        task.finished_at = datetime.now()
+        db.commit()
+
+        # Post-scan: dedup + risk scoring
+        try:
+            from backend.core.dedup import dedup_findings
+            dedup_findings(db, task.project_id)
+        except Exception:
+            pass
+
+        try:
+            from backend.core.risk_scorer import compute_risk_score
+            from backend.models.asset import Asset as AssetModel
+            findings_to_score = db.execute(
+                select(Finding).where(Finding.project_id == task.project_id, Finding.combined_risk_score == None)
+            ).scalars().all()
+            for f in findings_to_score:
+                asset = db.get(AssetModel, f.asset_id) if f.asset_id else None
+                f.combined_risk_score = compute_risk_score(
+                    severity=f.severity or "medium",
+                    asset_importance=asset.importance if asset else "normal",
+                )
+            db.commit()
+        except Exception:
+            pass
+
+        # Post-scan: send notification
+        try:
+            from backend.config import get_settings as _get_settings
+            _settings = _get_settings()
+            if _settings.notify_webhook_url:
+                import asyncio as _asyncio
+                from backend.core.notify import notify_scan_complete
+                _asyncio.run(notify_scan_complete(
+                    _settings.notify_webhook_url, _settings.notify_channel,
+                    task.task_name or f"扫描任务#{task.id}", total_vulns,
+                ))
+        except Exception:
+            pass
+
+    return {"task_id": scan_task_id, "vulns_found": total_vulns}
+
+
+def _parse_results(db: Session, plugin: PluginConfig, output_dir: str, project_id: int) -> list:
+    from backend.parsers.builtin import parse_output
+    findings_data = parse_output(plugin.name, plugin.output_format, output_dir, plugin.output_path)
+    created = []
+    for f in findings_data:
+        finding = Finding(
+            project_id=project_id,
+            title=f.get("title", "Unknown"),
+            vuln_type=f.get("vuln_type"),
+            severity=f.get("severity", "info"),
+            cvss_score=f.get("cvss_score"),
+            description=f.get("description"),
+            detail=f.get("detail"),
+            solution=f.get("solution"),
+            found_by=plugin.name,
+            evidence=f.get("evidence"),
+            dedup_hash=f.get("dedup_hash"),
+        )
+        db.add(finding)
+        created.append(finding)
+    db.commit()
+    return created
+
+
+@celery_app.task(name="intel_sync")
+def sync_vulnerability_intel():
+    from backend.intel.nvd_fetcher import fetch_latest as fetch_nvd
+    from backend.intel.cnvd_fetcher import fetch_latest as fetch_cnvd
+    fetch_nvd()
+    fetch_cnvd()
+
+
+@celery_app.task(name="asset_monitor")
+def monitor_asset_changes(project_id: int):
+    pass

@@ -1,0 +1,17 @@
+name: "内网渗透"
+description: "端口扫描 → 服务识别 → 漏洞扫描"
+
+nodes:
+  - id: "1"
+    plugin: nmap
+    config:
+      scan_type: "-sV"
+      ports: "21,22,23,25,53,80,110,111,135,139,143,389,443,445,993,995,1433,1521,2049,3306,3389,5432,5900,6379,8000,8080,8443,8888,9090,27017"
+  - id: "2"
+    plugin: nuclei
+    config:
+      severity: "critical,high,medium"
+
+edges:
+  - from: "1"
+    to: "2"

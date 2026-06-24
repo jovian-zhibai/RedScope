@@ -1,0 +1,35 @@
+plugin:
+  name: httpx
+  display_name: "httpx"
+  version: "1.6.9"
+  description: "HTTP探活与指纹识别"
+  category: recon
+  language: Go
+
+  docker:
+    image: "projectdiscovery/httpx:v1.6.9"
+
+  inputs:
+    - name: target_file
+      type: string
+      required: true
+      description: "目标列表文件路径"
+    - name: extra_args
+      type: string
+      required: false
+
+  command: "httpx -l {target_file} -status-code -title -tech-detect -json {extra_args} -o /output/result.json"
+
+  output:
+    format: jsonl
+    path: "/output/result.json"
+    parser: "parsers/builtin/httpx_parser.py"
+
+  provides:
+    - alive_hosts
+    - web_title
+    - tech_stack
+
+  proxy:
+    supported: true
+    flag: "-proxy socks5://{proxy_url}"

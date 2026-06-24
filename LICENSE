@@ -1,0 +1,56 @@
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+Copyright 2026 RedScope Contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+────────────────────────────────────────────────────────
+ADDITIONAL DISCLAIMER / 免责声明
+
+This software is provided for AUTHORIZED SECURITY TESTING ONLY.
+
+RedScope is a penetration testing platform designed for use by
+authorized security professionals during legitimate, contracted
+security assessments. By using this software, you agree that:
+
+1. You will ONLY use this tool against systems you have EXPLICIT
+   WRITTEN AUTHORIZATION to test.
+
+2. You are solely responsible for ensuring you have proper legal
+   authorization before conducting any testing activities.
+
+3. The authors and contributors of RedScope are NOT responsible
+   for any misuse, damage, or legal consequences arising from
+   unauthorized use of this software.
+
+4. Unauthorized access to computer systems is illegal in most
+   jurisdictions. Violations may result in criminal prosecution.
+
+5. This tool integrates third-party security tools (nmap, nuclei,
+   sqlmap, etc.) which have their own licenses and usage terms.
+   Users must comply with all applicable licenses.
+
+本软件仅供已获授权的安全测试使用。
+
+RedScope 是为合法安全评估工作中的授权安全专业人员设计的
+渗透测试平台。使用本软件即表示您同意：
+
+1. 您仅对拥有明确书面授权的系统使用本工具进行测试。
+2. 您自行负责确保在进行任何测试活动之前获得适当的法律授权。
+3. RedScope 的作者和贡献者不对因未经授权使用本软件而造成的
+   任何滥用、损害或法律后果承担责任。
+4. 未经授权访问计算机系统在大多数司法管辖区属于违法行为。
+5. 本工具集成了第三方安全工具，用户必须遵守所有适用的许可证。
+────────────────────────────────────────────────────────

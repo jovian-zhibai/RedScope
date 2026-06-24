@@ -1,0 +1,10 @@
+name: "快速漏洞扫描"
+description: "直接对目标URL进行高危漏洞扫描"
+
+nodes:
+  - id: "1"
+    plugin: nuclei
+    config:
+      severity: "critical,high"
+
+edges: []

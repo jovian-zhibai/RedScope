@@ -1,0 +1,44 @@
+plugin:
+  name: fscan
+  display_name: "Fscan"
+  version: "1.8.4"
+  description: "内网综合扫描工具(端口/服务/弱口令/漏洞)"
+  category: recon
+  language: Go
+
+  docker:
+    build: "./plugins/dockerfiles/fscan/Dockerfile"
+
+  local:
+    binary: "/usr/local/bin/fscan"
+    check_command: "fscan -h"
+
+  inputs:
+    - name: target
+      type: string
+      required: true
+      description: "目标 (IP/CIDR)"
+    - name: enable_brute
+      type: boolean
+      default: false
+      description: "是否开启弱口令爆破"
+    - name: extra_args
+      type: string
+      required: false
+
+  command: "fscan -h {target} -o /output/result.txt -no -nopoc {extra_args}"
+
+  output:
+    format: text
+    path: "/output/result.txt"
+    parser: "parsers/builtin/fscan_parser.py"
+
+  provides:
+    - open_ports
+    - service_info
+    - weak_passwords
+    - vuln_info
+
+  proxy:
+    supported: true
+    flag: "-socks5 {proxy_url}"
