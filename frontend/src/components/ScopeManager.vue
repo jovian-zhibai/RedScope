@@ -31,6 +31,20 @@
     </el-table>
     <el-empty v-else description="暂无边界规则" />
 
+    <!-- Change Log -->
+    <div v-if="changelog.length" style="margin-top: 20px;">
+      <h4 style="margin-bottom: 8px;">变更历史</h4>
+      <el-timeline>
+        <el-timeline-item v-for="log in changelog" :key="log.id" :timestamp="log.changed_at?.replace('T', ' ').slice(0, 19)" placement="top">
+          <span style="font-size: 13px;">
+            <el-tag :type="log.action === 'add' ? 'success' : 'danger'" size="small">{{ log.action === 'add' ? '新增' : '删除' }}</el-tag>
+            {{ log.target_value }}
+            <span v-if="log.reason" style="color: var(--rs-text-secondary); margin-left: 8px;">{{ log.reason }}</span>
+          </span>
+        </el-timeline-item>
+      </el-timeline>
+    </div>
+
     <el-dialog v-model="showAdd" title="添加边界规则" width="480px">
       <el-form :model="form" label-width="80px">
         <el-form-item label="类型">
@@ -62,10 +76,18 @@ import api from '../stores/api'
 
 const props = defineProps({ projectId: Number, mode: String })
 const rules = ref([])
+const changelog = ref([])
 const showAdd = ref(false)
 const form = ref({ rule_type: 'include', target_type: 'cidr', target_value: '', description: '' })
 
-const load = async () => { const res = await api.get(`/projects/${props.projectId}/scope`); rules.value = res.items || [] }
+const load = async () => {
+  const [r, cl] = await Promise.all([
+    api.get(`/projects/${props.projectId}/scope`),
+    api.get(`/projects/${props.projectId}/scope/changelog`),
+  ])
+  rules.value = r.items || []
+  changelog.value = cl.items || []
+}
 const addRule = async () => { await api.post(`/projects/${props.projectId}/scope`, form.value); showAdd.value = false; await load() }
 const deleteRule = async (id) => { await api.delete(`/projects/${props.projectId}/scope/${id}`); await load() }
 onMounted(load)

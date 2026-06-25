@@ -43,10 +43,10 @@
       <el-tab-pane label="资产" name="assets">
         <div style="display: flex; gap: 8px; margin-bottom: 16px;">
           <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/assets`)">管理资产 →</el-button>
-          <el-upload :action="`/api/projects/${project.id}/import/csv-assets`" :headers="uploadHeaders" :on-success="onImportSuccess" :show-file-list="false" accept=".csv">
+          <el-upload :action="`/api/v1/projects/${project.id}/import/csv-assets`" :headers="uploadHeaders" :on-success="onImportSuccess" :show-file-list="false" accept=".csv">
             <el-button size="small">导入CSV资产</el-button>
           </el-upload>
-          <el-upload :action="`/api/projects/${project.id}/import/nessus`" :headers="uploadHeaders" :on-success="onImportSuccess" :show-file-list="false" accept=".nessus,.xml">
+          <el-upload :action="`/api/v1/projects/${project.id}/import/nessus`" :headers="uploadHeaders" :on-success="onImportSuccess" :show-file-list="false" accept=".nessus,.xml">
             <el-button size="small">导入Nessus报告</el-button>
           </el-upload>
         </div>
@@ -57,6 +57,12 @@
           <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/scanning`)">扫描任务 →</el-button>
           <el-button size="small" @click="showPipeline = true">运行流水线</el-button>
           <el-button size="small" @click="runVulnMatch" :loading="matching">被动漏洞匹配</el-button>
+          <el-button size="small" @click="runOpsecCheck" :loading="opsecChecking">OPSEC 预检</el-button>
+        </div>
+        <div v-if="opsecWarnings.length" style="margin-bottom: 12px;">
+          <div v-for="(w, i) in opsecWarnings" :key="i" style="padding: 8px 12px; margin-bottom: 4px; border-radius: 6px; font-size: 13px;" :style="{ background: w.level === 'danger' ? 'rgba(248,81,73,0.1)' : 'rgba(210,153,34,0.1)', borderLeft: w.level === 'danger' ? '3px solid var(--rs-danger)' : '3px solid var(--rs-warning)' }">
+            <strong>{{ w.category }}</strong>: {{ w.message }}<br/><span style="color: var(--rs-text-secondary);">{{ w.suggestion }}</span>
+          </div>
         </div>
       </el-tab-pane>
 
@@ -67,6 +73,18 @@
           <el-button size="small" @click="runScoreRisks">重算风险评分</el-button>
           <el-button size="small" @click="exportFindings">导出漏洞CSV</el-button>
           <el-button size="small" @click="exportArchive">导出项目归档</el-button>
+        </div>
+
+        <!-- Risk Acceptances -->
+        <div v-if="riskAcceptances.length" style="margin-top: 12px;">
+          <h4 style="margin-bottom: 8px;">客户风险接受记录 ({{ riskAcceptances.length }})</h4>
+          <el-table :data="riskAcceptances" size="small" style="width: 100%;">
+            <el-table-column prop="finding_id" label="漏洞ID" width="80" />
+            <el-table-column prop="client_name" label="客户" width="120" />
+            <el-table-column prop="accepted_by" label="接受人" width="120" />
+            <el-table-column prop="reason" label="原因" min-width="200" />
+            <el-table-column prop="accepted_at" label="时间" width="160"><template #default="{ row }">{{ row.accepted_at?.replace('T', ' ').slice(0, 19) }}</template></el-table-column>
+          </el-table>
         </div>
       </el-tab-pane>
 
@@ -152,7 +170,10 @@
 
         <!-- Recordings -->
         <div style="margin-top: 16px;">
-          <h4 style="margin-bottom: 8px;">终端录制 / Playbook</h4>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h4>终端录制 / Playbook</h4>
+            <el-button size="small" @click="showRecordForm = true"><el-icon><Plus /></el-icon> 保存录制</el-button>
+          </div>
           <el-table :data="recordings" style="width: 100%;" size="small">
             <el-table-column prop="title" label="标题" min-width="150" />
             <el-table-column prop="commands_count" label="命令数" width="80" />
@@ -166,6 +187,21 @@
           </el-table>
           <el-empty v-if="!recordings.length" description="暂无录制" :image-size="40" />
         </div>
+
+        <!-- Save Recording Dialog -->
+        <el-dialog v-model="showRecordForm" title="保存终端录制" width="480px">
+          <el-form :model="recordForm" label-width="100px">
+            <el-form-item label="标题"><el-input v-model="recordForm.title" placeholder="如: 横向移动到 DB 服务器" /></el-form-item>
+            <el-form-item label="命令列表"><el-input v-model="recordForm.commands_text" type="textarea" :rows="5" placeholder="每行一条命令" /></el-form-item>
+            <el-form-item label="时长(秒)"><el-input-number v-model="recordForm.duration_seconds" :min="0" /></el-form-item>
+            <el-form-item label="保存为 Playbook"><el-switch v-model="recordForm.is_playbook" /></el-form-item>
+            <el-form-item v-if="recordForm.is_playbook" label="Playbook 名称"><el-input v-model="recordForm.playbook_name" /></el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="showRecordForm = false">取消</el-button>
+            <el-button type="primary" @click="saveRecording">保存</el-button>
+          </template>
+        </el-dialog>
       </el-tab-pane>
 
       <el-tab-pane label="作战管理" name="operations">
@@ -280,6 +316,11 @@ const pipelines = ref([])
 const selectedPipeline = ref('')
 const pipelineTargets = ref('')
 const runningPipeline = ref(false)
+const riskAcceptances = ref([])
+const opsecChecking = ref(false)
+const opsecWarnings = ref([])
+const showRecordForm = ref(false)
+const recordForm = ref({ title: '', commands_text: '', duration_seconds: 0, is_playbook: false, playbook_name: '' })
 
 const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token')}` }
 
@@ -290,10 +331,11 @@ onMounted(async () => {
     const res = await api.get(`/projects/${pid}/sessions`)
     sessions.value = res.items || []
     const active = sessions.value.find(s => s.status === 'active')
-    if (active) activeSessionId.value = active.id
+    if (active) { activeSessionId.value = active.id; sessionStorage.setItem(`rs_active_session_${pid}`, active.id) }
   } catch(e) {}
   try { const res = await api.get(`/projects/${pid}/screenshots`); screenshots.value = res.items || [] } catch(e) {}
   try { const res = await api.get(`/projects/${pid}/recordings`); recordings.value = res.items || [] } catch(e) {}
+  try { const res = await api.get(`/projects/${pid}/risk-acceptances`); riskAcceptances.value = res.items || [] } catch(e) {}
 })
 
 const emergencyStop = async () => {
@@ -325,7 +367,7 @@ const runScoreRisks = async () => {
   ElMessage.success(res.message)
 }
 
-const exportFindings = () => { window.open(`/api/projects/${pid}/export/findings-csv`, '_blank') }
+const exportFindings = () => { window.open(`/api/v1/projects/${pid}/export/findings-csv`, '_blank') }
 const exportArchive = async () => {
   const res = await api.get(`/projects/${pid}/export/archive`)
   const blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' })
@@ -370,6 +412,16 @@ const runPipeline = async () => {
 
 // Load pipelines when scanning tab shown
 const onTabChange = () => { if (activeTab.value === 'scanning' && !pipelines.value.length) loadPipelines() }
+
+const runOpsecCheck = async () => {
+  opsecChecking.value = true
+  try {
+    const res = await api.post(`/projects/${pid}/opsec-check`, { engine_name: 'nuclei', concurrency: 50, target_count: 10 })
+    opsecWarnings.value = res.warnings || []
+    if (!opsecWarnings.value.length) ElMessage.success('OPSEC 检查通过，无告警')
+  } catch (e) { ElMessage.error('OPSEC 检查失败') }
+  finally { opsecChecking.value = false }
+}
 
 const aiReportSummary = async () => {
   aiSummarizing.value = true
@@ -421,6 +473,7 @@ const startSession = async () => {
   try {
     const res = await api.post(`/projects/${pid}/sessions/start`, { title: '' })
     activeSessionId.value = res.id
+    sessionStorage.setItem(`rs_active_session_${pid}`, res.id)
     ElMessage.success('工作 Session 已开始')
     const sr = await api.get(`/projects/${pid}/sessions`); sessions.value = sr.items || []
   } catch (e) { ElMessage.error(e.response?.data?.detail || '启动失败') }
@@ -432,6 +485,7 @@ const endSession = async () => {
   try {
     const res = await api.post(`/projects/${pid}/sessions/${activeSessionId.value}/end`)
     activeSessionId.value = null
+    sessionStorage.removeItem(`rs_active_session_${pid}`)
     ElMessage.success('Session 已结束')
     const sr = await api.get(`/projects/${pid}/sessions`); sessions.value = sr.items || []
   } catch (e) { ElMessage.error('结束失败') }
@@ -445,5 +499,24 @@ const onScreenshotUploaded = async (res) => {
 
 const previewScreenshot = (s) => {
   window.open(s.view_url, '_blank')
+}
+
+const saveRecording = async () => {
+  if (!recordForm.value.title) { ElMessage.warning('请输入标题'); return }
+  try {
+    const commands = recordForm.value.commands_text.split('\n').filter(Boolean).map(c => ({ command: c, timestamp: new Date().toISOString() }))
+    await api.post(`/projects/${pid}/recordings`, {
+      session_id: activeSessionId.value,
+      title: recordForm.value.title,
+      commands,
+      duration_seconds: recordForm.value.duration_seconds,
+      is_playbook: recordForm.value.is_playbook,
+      playbook_name: recordForm.value.playbook_name,
+    })
+    showRecordForm.value = false
+    recordForm.value = { title: '', commands_text: '', duration_seconds: 0, is_playbook: false, playbook_name: '' }
+    ElMessage.success('录制已保存')
+    const r = await api.get(`/projects/${pid}/recordings`); recordings.value = r.items || []
+  } catch (e) { ElMessage.error('保存失败') }
 }
 </script>

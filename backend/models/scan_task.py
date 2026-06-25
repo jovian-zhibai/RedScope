@@ -35,6 +35,7 @@ class EngineRun(Base):
     scan_task_id = Column(Integer, ForeignKey("scan_tasks.id"), nullable=False)
     engine_name = Column(String(30), nullable=False)
     status = Column(String(20), default="pending")
+    runner_job_id = Column(String(64))
     raw_output_path = Column(String(512))
     vulns_found = Column(Integer, default=0)
     started_at = Column(DateTime(timezone=True))

@@ -70,7 +70,15 @@ const load = async () => {
   catch (e) { ElMessage.error('加载失败') }
 }
 
-const create = async () => { await api.post('/tenants', form.value); showCreate.value = false; await load() }
+const create = async () => {
+  try {
+    await api.post('/tenants', form.value)
+    showCreate.value = false
+    ElMessage.success('租户已创建')
+    form.value = { name: '', slug: '', description: '', max_users: 50, max_projects: 100 }
+    await load()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '创建失败') }
+}
 
 const selectTenant = async (row) => {
   selectedTenant.value = row; showUsers.value = true

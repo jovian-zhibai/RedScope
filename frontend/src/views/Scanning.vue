@@ -144,6 +144,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../stores/api'
+import { logSessionActivity } from '../stores/api'
 
 const route = useRoute()
 const pid = route.params.id
@@ -195,6 +196,7 @@ const createScan = async () => {
     } else {
       ElMessage.success('扫描任务已创建')
     }
+    logSessionActivity(pid, '创建扫描', `${payload.scan_strategy} 策略, ${targets.length} 个目标`)
     await load()
   } catch (e) {
     const detail = e.response?.data?.detail

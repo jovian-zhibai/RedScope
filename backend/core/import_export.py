@@ -34,10 +34,8 @@ def import_assets_from_csv(db: Session, project_id: int, csv_content: str) -> in
 
 
 def import_nessus_xml(db: Session, project_id: int, xml_content: str) -> int:
-    import xml.etree.ElementTree as ET
-    from xml.etree.ElementTree import XMLParser
-    parser = XMLParser()
-    root = ET.fromstring(xml_content, parser=parser)
+    import defusedxml.ElementTree as ET
+    root = ET.fromstring(xml_content)
     count = 0
 
     for report_host in root.findall(".//ReportHost"):

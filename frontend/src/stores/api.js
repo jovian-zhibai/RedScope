@@ -23,3 +23,9 @@ api.interceptors.response.use(
 )
 
 export default api
+
+export function logSessionActivity(projectId, action, detail = '') {
+  const sessionId = sessionStorage.getItem(`rs_active_session_${projectId}`)
+  if (!sessionId) return
+  api.post(`/projects/${projectId}/sessions/${sessionId}/activity`, { action, detail }).catch(() => {})
+}

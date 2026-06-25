@@ -106,19 +106,34 @@ async def stop_scan(project_id: int, scan_id: int, _=Depends(require_project), d
     if not task or task.project_id != project_id:
         raise HTTPException(404, "任务不存在")
 
-    from backend.core.engine_orchestrator import orchestrator
-    # Worker registers jobs as "{task_id}_{engine}_{target_index}", stop all matching this task
+    from backend.models.scan_task import EngineRun
+    import httpx, os
+
+    result = await db.execute(
+        select(EngineRun).where(EngineRun.scan_task_id == scan_id, EngineRun.status == "running")
+    )
+    running_runs = result.scalars().all()
+
+    runner_url = os.environ.get("SCAN_RUNNER_URL", "http://scan-runner:9090")
+    runner_secret = os.environ.get("RUNNER_SECRET", "")
+    headers = {"X-Runner-Secret": runner_secret} if runner_secret else {}
+
     stopped = 0
-    for key in list(orchestrator._running_jobs.keys()):
-        if key.startswith(f"{scan_id}_"):
-            await orchestrator.stop_engine(key)
-            stopped += 1
-    if stopped == 0:
-        await orchestrator.stop_engine(str(scan_id))
+    async with httpx.AsyncClient(timeout=10) as client:
+        for run in running_runs:
+            if run.runner_job_id:
+                try:
+                    await client.delete(f"{runner_url}/jobs/{run.runner_job_id}", headers=headers)
+                    stopped += 1
+                except Exception:
+                    pass
+            run.status = "failed"
+            run.error_message = "用户手动停止"
+
     task.status = "stopped"
     task.stopped_reason = "用户手动停止"
     await db.flush()
-    return {"status": "stopped"}
+    return {"status": "stopped", "stopped_engines": stopped}
 
 
 @router.get("/{scan_id}")

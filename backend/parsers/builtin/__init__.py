@@ -2,19 +2,20 @@
 
 import hashlib
 import json
-import xml.etree.ElementTree as ET
-from xml.etree.ElementTree import XMLParser
 from pathlib import Path
+
+try:
+    import defusedxml.ElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET
 
 
 def _safe_parse_xml(file_path: str):
-    parser = XMLParser()
-    tree = ET.parse(file_path, parser=parser)
+    tree = ET.parse(file_path)
     return tree
 
 def _safe_fromstring(xml_text: str):
-    parser = XMLParser()
-    return ET.fromstring(xml_text, parser=parser)
+    return ET.fromstring(xml_text)
 
 
 def parse_output(engine_name: str, output_format: str, output_dir: str, output_path: str) -> list[dict]:

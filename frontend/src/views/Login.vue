@@ -14,11 +14,12 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../stores/api'
 
 const router = useRouter()
+const route = useRoute()
 const form = ref({ username: '', password: '' })
 const loading = ref(false)
 const registering = ref(false)
@@ -33,7 +34,7 @@ const login = async () => {
   try {
     const res = await api.post('/auth/login', form.value)
     localStorage.setItem('token', res.access_token)
-    router.push('/')
+    router.push(route.query.redirect || '/')
   } catch (e) { ElMessage.error(getErrorMsg(e, '登录失败')) }
   finally { loading.value = false }
 }
@@ -47,7 +48,7 @@ const register = async () => {
     const res = await api.post('/auth/register', form.value)
     localStorage.setItem('token', res.access_token)
     ElMessage.success('注册成功')
-    router.push('/')
+    router.push(route.query.redirect || '/')
   } catch (e) { ElMessage.error(getErrorMsg(e, '注册失败')) }
   finally { registering.value = false }
 }

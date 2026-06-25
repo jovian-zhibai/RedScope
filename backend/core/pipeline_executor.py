@@ -34,10 +34,13 @@ class PipelineExecutor:
                 results[node_id] = {"error": f"Plugin {plugin_name} not found"}
                 return
 
-            targets = initial_targets
+            targets = list(initial_targets)
+            dep_targets = []
             for dep_id in deps.get(node_id, []):
                 if dep_id in completed:
-                    targets = completed[dep_id]
+                    dep_targets.extend(completed[dep_id])
+            if dep_targets:
+                targets = list(dict.fromkeys(dep_targets))
 
             node_results = []
             for target in targets:

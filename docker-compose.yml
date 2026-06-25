@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: redscope
       POSTGRES_USER: redscope
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-redscope_dev_2026}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -28,13 +28,13 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --requirepass ${REDIS_PASSWORD:-redscope_redis}
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redscope_redis}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -86,8 +86,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.backend
     environment:
-      DATABASE_URL: postgresql+asyncpg://redscope:${DB_PASSWORD:-redscope_dev_2026}@db:5432/redscope
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redscope_redis}@redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://redscope:${DB_PASSWORD}@db:5432/redscope
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       SCAN_RUNNER_URL: http://scan-runner:9090
@@ -125,8 +125,8 @@ services:
       dockerfile: docker/Dockerfile.backend
     command: celery -A backend.tasks.celery_app worker -l info -c 4
     environment:
-      DATABASE_URL: postgresql+asyncpg://redscope:${DB_PASSWORD:-redscope_dev_2026}@db:5432/redscope
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redscope_redis}@redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://redscope:${DB_PASSWORD}@db:5432/redscope
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       SCAN_RUNNER_URL: http://scan-runner:9090

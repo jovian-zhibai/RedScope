@@ -176,10 +176,12 @@ async def list_screenshots(project_id: int, finding_id: int | None = None, _=Dep
 @router.get("/projects/{project_id}/screenshots/{screenshot_id}/view")
 async def view_screenshot(project_id: int, screenshot_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     from fastapi.responses import FileResponse
+    import mimetypes
     screenshot = await db.get(Screenshot, screenshot_id)
     if not screenshot or screenshot.project_id != project_id:
         raise HTTPException(404)
-    return FileResponse(screenshot.file_path, media_type="image/png")
+    media_type = mimetypes.guess_type(screenshot.file_path)[0] or "image/png"
+    return FileResponse(screenshot.file_path, media_type=media_type)
 
 
 # ─── Terminal Recordings ──────────────────────────────────

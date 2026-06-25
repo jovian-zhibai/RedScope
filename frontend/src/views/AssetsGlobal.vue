@@ -2,7 +2,7 @@
   <div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
       <h2>资产管理</h2>
-      <el-select v-model="selectedProject" placeholder="选择项目" size="small" style="width: 240px;" @change="loadAssets">
+      <el-select v-model="selectedProject" placeholder="选择项目" size="small" style="width: 240px;" @change="currentPage = 1; loadAssets()">
         <el-option v-for="p in projects" :key="p.id" :value="p.id" :label="p.name" />
       </el-select>
     </div>
@@ -13,8 +13,7 @@
 
     <div v-else>
       <div class="stat-grid" style="margin-bottom: 16px;">
-        <div class="stat-card info"><div class="stat-label">总资产</div><div class="stat-value">{{ assets.length }}</div></div>
-        <div class="stat-card success"><div class="stat-label">存活</div><div class="stat-value">{{ assets.filter(a => a.is_alive).length }}</div></div>
+        <div class="stat-card info"><div class="stat-label">总资产</div><div class="stat-value">{{ total }}</div></div>
       </div>
 
       <div style="display: flex; gap: 8px; margin-bottom: 12px;">
@@ -38,6 +37,7 @@
           <template #default="{ row }">{{ row.is_alive ? '🟢' : '🔴' }}</template>
         </el-table-column>
       </el-table>
+      <el-pagination v-if="total > pageSize" :current-page="currentPage" :page-size="pageSize" :total="total" @current-change="(p) => { currentPage = p; loadAssets() }" layout="prev, pager, next, total" style="margin-top: 12px; justify-content: flex-end;" />
       <el-empty v-if="!assets.length" description="该项目暂无资产" />
     </div>
   </div>
@@ -50,6 +50,9 @@ import api from '../stores/api'
 const projects = ref([])
 const selectedProject = ref(null)
 const assets = ref([])
+const total = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(20)
 
 onMounted(async () => {
   try { const res = await api.get('/projects'); projects.value = res.items || [] } catch {}
@@ -57,7 +60,10 @@ onMounted(async () => {
 
 const loadAssets = async () => {
   if (!selectedProject.value) return
-  try { const res = await api.get(`/projects/${selectedProject.value}/assets`); assets.value = res.items || [] }
-  catch { assets.value = [] }
+  try {
+    const res = await api.get(`/projects/${selectedProject.value}/assets`, { params: { page: currentPage.value, page_size: pageSize.value } })
+    assets.value = res.items || []
+    total.value = res.total || 0
+  } catch { assets.value = []; total.value = 0 }
 }
 </script>

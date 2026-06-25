@@ -15,11 +15,12 @@ from backend.core.error_handler import logger
 
 
 class EngineResult:
-    def __init__(self, engine: str, success: bool, output_path: str = "", error: str = ""):
+    def __init__(self, engine: str, success: bool, output_path: str = "", error: str = "", job_id: str = ""):
         self.engine = engine
         self.success = success
         self.output_path = output_path
         self.error = error
+        self.job_id = job_id
 
 
 class EngineOrchestrator:
@@ -90,10 +91,10 @@ class EngineOrchestrator:
             self._running_jobs.pop(task_id, None)
 
             if result["status"] == "completed":
-                return EngineResult(plugin.name, True, output_path=result.get("output_dir", ""))
+                return EngineResult(plugin.name, True, output_path=result.get("output_dir", ""), job_id=job_id)
             else:
                 return EngineResult(plugin.name, False, output_path=result.get("output_dir", ""),
-                                    error=result.get("error", "Scan failed"))
+                                    error=result.get("error", "Scan failed"), job_id=job_id)
 
         except httpx.HTTPStatusError as e:
             return EngineResult(plugin.name, False, error=f"Scan runner rejected: {e.response.text[:500]}")

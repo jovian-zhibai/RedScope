@@ -64,6 +64,20 @@
           {{ statusLabels[next] }}
         </el-button>
       </div>
+
+      <!-- Comments -->
+      <div style="border-top: 1px solid var(--rs-border); padding-top: 12px;">
+        <h4 style="margin-bottom: 8px;">评论</h4>
+        <div v-for="c in orderComments" :key="c.id" style="padding: 8px 0; border-bottom: 1px solid var(--rs-border); font-size: 13px;">
+          <div>{{ c.content }}</div>
+          <div style="font-size: 11px; color: var(--rs-text-secondary); margin-top: 4px;">用户#{{ c.user_id }} · {{ c.created_at?.replace('T', ' ').slice(0, 19) }}</div>
+        </div>
+        <el-empty v-if="!orderComments.length" description="暂无评论" :image-size="40" />
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+          <el-input v-model="newComment" placeholder="添加评论..." size="small" @keyup.enter="addComment" />
+          <el-button size="small" type="primary" @click="addComment" :disabled="!newComment.trim()">发送</el-button>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -76,6 +90,7 @@ import api from '../stores/api'
 const orders = ref([]); const showCreate = ref(false); const showDetail = ref(false); const selectedOrder = ref(null)
 const filterStatus = ref(''); const filterType = ref(''); const showAll = ref(true)
 const form = ref({ title: '', order_type: 'pentest_request', priority: 'normal', description: '' })
+const orderComments = ref([]); const newComment = ref('')
 const typeLabels = { pentest_request: '渗透测试', retest_request: '复测', baseline_check: '基线检查', hw_exercise: '护网演练', emergency_response: '应急响应', report_review: '报告审核' }
 const statusLabels = { pending: '待审批', approved: '已审批', in_progress: '执行中', review: '待复核', completed: '已完成', rejected: '已驳回' }
 const validTransitions = { pending: ['approved', 'rejected'], approved: ['in_progress'], in_progress: ['review', 'completed'], review: ['completed', 'in_progress'] }
@@ -96,7 +111,30 @@ const load = async () => {
   } catch (e) { ElMessage.error('加载失败') }
 }
 const create = async () => { await api.post('/workflow', form.value); showCreate.value = false; ElMessage.success('工单已创建'); await load() }
-const selectOrder = (row) => { selectedOrder.value = row; showDetail.value = true }
-const transition = async (status) => { await api.put(`/workflow/${selectedOrder.value.id}/transition`, { new_status: status }); showDetail.value = false; await load() }
+const selectOrder = async (row) => {
+  try {
+    const detail = await api.get(`/workflow/${row.id}`)
+    selectedOrder.value = detail
+    orderComments.value = detail.comments || []
+  } catch {
+    selectedOrder.value = row
+    orderComments.value = []
+  }
+  showDetail.value = true
+}
+const transition = async (status) => {
+  await api.put(`/workflow/${selectedOrder.value.id}/transition`, { new_status: status })
+  showDetail.value = false
+  await load()
+}
+const addComment = async () => {
+  if (!newComment.value.trim()) return
+  try {
+    await api.post(`/workflow/${selectedOrder.value.id}/comments`, { content: newComment.value })
+    newComment.value = ''
+    const detail = await api.get(`/workflow/${selectedOrder.value.id}`)
+    orderComments.value = detail.comments || []
+  } catch (e) { ElMessage.error('评论失败') }
+}
 onMounted(load)
 </script>

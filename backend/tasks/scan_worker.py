@@ -73,8 +73,9 @@ async def _run_scan_task_async(task_self, scan_task_id: int):
             db.add(engine_run)
             db.commit()
 
+            engine_vulns = 0
             try:
-                orchestrator = EngineOrchestrator()
+                from backend.core.engine_orchestrator import orchestrator
                 from backend.core.proxy_router import ProxyRouter
                 proxy_router = ProxyRouter(db, task.project_id)
 
@@ -91,8 +92,13 @@ async def _run_scan_task_async(task_self, scan_task_id: int):
                     params = {"target": target, "url": target, "domain": target}
                     result = await orchestrator.run_engine(plugin, params, proxy_url=proxy_url, task_id=f"{task.id}_{engine_name}_{i}")
 
+                    if result.job_id:
+                        engine_run.runner_job_id = result.job_id
+                        db.commit()
+
                     if result.success and result.output_path:
                         findings = _parse_results(db, plugin, result.output_path, task.project_id)
+                        engine_vulns += len(findings)
                         total_vulns += len(findings)
 
                         # Instant notification for critical findings
@@ -106,7 +112,7 @@ async def _run_scan_task_async(task_self, scan_task_id: int):
                     task_self.update_state(state="PROGRESS", meta={"progress": task.progress})
 
                 engine_run.status = "completed"
-                engine_run.vulns_found = total_vulns
+                engine_run.vulns_found = engine_vulns
                 engine_run.finished_at = datetime.now()
 
             except Exception as e:

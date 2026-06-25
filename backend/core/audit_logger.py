@@ -1,8 +1,28 @@
 """Audit logger: records all security-relevant operations to both log and database."""
 
+import asyncio
 from datetime import datetime
 from fastapi import Request
 from backend.core.error_handler import logger
+
+
+def _write_audit_log(user_id, action, target_type, detail, ip_address, severity):
+    try:
+        from backend.database_sync import SyncSession
+        from backend.models.operational import AuditLog
+        with SyncSession() as db:
+            log = AuditLog(
+                user_id=user_id,
+                action=action,
+                target_type=target_type,
+                detail=detail,
+                ip_address=ip_address,
+                severity=severity,
+            )
+            db.add(log)
+            db.commit()
+    except Exception:
+        pass
 
 
 async def audit_log_middleware(request: Request, call_next):
@@ -28,21 +48,9 @@ async def audit_log_middleware(request: Request, call_next):
             f"status={response.status_code}"
         )
 
-        try:
-            from backend.database_sync import SyncSession
-            from backend.models.operational import AuditLog
-            with SyncSession() as db:
-                log = AuditLog(
-                    user_id=user_id,
-                    action=f"{request.method} {path}",
-                    target_type=path.split("/")[3] if len(path.split("/")) > 3 else "unknown",
-                    detail=f"status={response.status_code} ip={client_ip}",
-                    ip_address=client_ip,
-                    severity=severity.lower(),
-                )
-                db.add(log)
-                db.commit()
-        except Exception:
-            pass
+        loop = asyncio.get_event_loop()
+        target_type = path.split("/")[3] if len(path.split("/")) > 3 else "unknown"
+        detail = f"status={response.status_code} ip={client_ip}"
+        loop.run_in_executor(None, _write_audit_log, user_id, f"{request.method} {path}", target_type, detail, client_ip, severity.lower())
 
     return response

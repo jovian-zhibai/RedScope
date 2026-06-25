@@ -24,8 +24,10 @@ async def list_assets(
     project_id: int,
     scope_status: str | None = None,
     importance: str | None = None,
+    search: str | None = None,
     page: int = 1,
     page_size: int = 50,
+    _=Depends(require_project),
     db: AsyncSession = Depends(get_db),
 ):
     from backend.core.pagination import paginate
@@ -34,6 +36,9 @@ async def list_assets(
         query = query.where(Asset.scope_status == scope_status)
     if importance:
         query = query.where(Asset.importance == importance)
+    if search:
+        pattern = f"%{search}%"
+        query = query.where(Asset.host.ilike(pattern) | Asset.application.ilike(pattern) | Asset.server.ilike(pattern))
 
     paged = await paginate(db, query, page, page_size)
     assets = paged["items"]
@@ -87,9 +92,19 @@ async def update_asset(project_id: int, asset_id: int, req: dict, _=Depends(requ
         raise HTTPException(404, "资产不存在")
     UPDATABLE_FIELDS = {"host", "port", "protocol", "url", "os", "server", "framework",
                         "application", "app_version", "scope_status", "importance", "is_alive", "tags"}
+    VALID_IMPORTANCE = {"critical", "normal", "low", "deprecated"}
+    VALID_SCOPE = {"in_scope", "out_of_scope", "pending_confirm"}
     for field, value in req.items():
-        if field in UPDATABLE_FIELDS:
-            setattr(asset, field, value)
+        if field not in UPDATABLE_FIELDS:
+            continue
+        if field == "importance" and value not in VALID_IMPORTANCE:
+            raise HTTPException(400, f"无效的重要性: {value}")
+        if field == "scope_status" and value not in VALID_SCOPE:
+            raise HTTPException(400, f"无效的范围状态: {value}")
+        if field == "port" and value is not None:
+            if not isinstance(value, int) or value < 1 or value > 65535:
+                raise HTTPException(400, "端口范围 1-65535")
+        setattr(asset, field, value)
     await db.flush()
     return {"id": asset.id, "status": "updated"}
 

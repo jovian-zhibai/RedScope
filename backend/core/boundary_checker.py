@@ -77,7 +77,7 @@ class BoundaryChecker:
                     return False
 
         if rule.target_type == "domain":
-            pattern = rule.target_value.replace(".", r"\.").replace("*", r"[^.]*")
+            pattern = rule.target_value.replace(".", r"\.").replace("*", r"[a-zA-Z0-9._-]*")
             return bool(re.match(f"^{pattern}$", target, re.IGNORECASE))
 
         if rule.target_type == "url":

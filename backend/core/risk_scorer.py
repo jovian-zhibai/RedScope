@@ -52,4 +52,4 @@ def _is_private(host: str) -> bool:
         addr = ipaddress.ip_address(host)
         return addr.is_private or addr.is_loopback
     except ValueError:
-        return True
+        return False

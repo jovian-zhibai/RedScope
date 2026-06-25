@@ -137,10 +137,22 @@ async def update_project(project_id: int, req: ProjectUpdate, _=Depends(require_
 @router.post("/{project_id}/emergency-stop")
 async def emergency_stop(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     from backend.core.engine_orchestrator import orchestrator
+    from backend.models.scan_task import ScanTask
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(404, "项目不存在")
 
-    await orchestrator.stop_all()
+    result = await db.execute(
+        select(ScanTask).where(ScanTask.project_id == project_id, ScanTask.status == "running")
+    )
+    running_tasks = result.scalars().all()
+    for task in running_tasks:
+        for key in list(orchestrator._running_jobs.keys()):
+            if key.startswith(f"{task.id}_"):
+                await orchestrator.stop_engine(key)
+        task.status = "stopped"
+        task.stopped_reason = "项目紧急停止"
+
     project.status = "paused"
-    return {"status": "stopped", "message": "所有扫描任务已紧急停止"}
+    await db.flush()
+    return {"status": "stopped", "message": f"已停止 {len(running_tasks)} 个扫描任务"}

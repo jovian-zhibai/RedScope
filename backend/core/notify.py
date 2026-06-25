@@ -8,6 +8,8 @@ class NotifyChannel(str, Enum):
     WECOM = "wecom"
     DINGTALK = "dingtalk"
     FEISHU = "feishu"
+    SLACK = "slack"
+    TELEGRAM = "telegram"
 
 
 async def send_webhook(channel: str, webhook_url: str, title: str, content: str):
@@ -17,6 +19,10 @@ async def send_webhook(channel: str, webhook_url: str, title: str, content: str)
         await _send_dingtalk(webhook_url, title, content)
     elif channel == NotifyChannel.FEISHU:
         await _send_feishu(webhook_url, title, content)
+    elif channel == NotifyChannel.SLACK:
+        await _send_slack(webhook_url, title, content)
+    elif channel == NotifyChannel.TELEGRAM:
+        await _send_telegram(webhook_url, title, content)
 
 
 async def _send_wecom(url: str, title: str, content: str):
@@ -43,6 +49,21 @@ async def _send_feishu(url: str, title: str, content: str):
                 "header": {"title": {"tag": "plain_text", "content": title}},
                 "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": content}}],
             },
+        })
+
+
+async def _send_slack(url: str, title: str, content: str):
+    async with httpx.AsyncClient(timeout=10) as client:
+        await client.post(url, json={
+            "text": f"*{title}*\n{content}",
+        })
+
+
+async def _send_telegram(url: str, title: str, content: str):
+    async with httpx.AsyncClient(timeout=10) as client:
+        await client.post(url, json={
+            "text": f"<b>{title}</b>\n{content}",
+            "parse_mode": "HTML",
         })
 
 

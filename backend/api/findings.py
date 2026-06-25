@@ -29,6 +29,7 @@ async def list_findings(
     fix_status: str | None = None,
     page: int = 1,
     page_size: int = 50,
+    _=Depends(require_project),
     db: AsyncSession = Depends(get_db),
 ):
     from backend.core.pagination import paginate
@@ -101,9 +102,16 @@ async def update_finding(project_id: int, finding_id: int, req: dict, _=Depends(
         raise HTTPException(404, "漏洞不存在")
     UPDATABLE_FIELDS = {"title", "vuln_type", "severity", "cvss_score", "description", "detail",
                         "solution", "fix_status", "is_verified", "is_false_positive", "evidence", "attck_techniques"}
+    VALID_SEVERITY = {"critical", "high", "medium", "low", "info"}
+    VALID_FIX_STATUS = {"unfixed", "fixing", "fixed", "reopen", "accepted", "merged"}
     for field, value in req.items():
-        if field in UPDATABLE_FIELDS:
-            setattr(finding, field, value)
+        if field not in UPDATABLE_FIELDS:
+            continue
+        if field == "severity" and value not in VALID_SEVERITY:
+            raise HTTPException(400, f"无效的严重程度: {value}")
+        if field == "fix_status" and value not in VALID_FIX_STATUS:
+            raise HTTPException(400, f"无效的修复状态: {value}")
+        setattr(finding, field, value)
     await db.flush()
     return {"id": finding.id, "status": "updated"}
 

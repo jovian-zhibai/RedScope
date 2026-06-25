@@ -145,10 +145,13 @@ class PayloadCreate(BaseModel):
 
 
 @router.get("/payloads")
-async def list_payloads(category: str | None = None, db: AsyncSession = Depends(get_db)):
+async def list_payloads(category: str | None = None, request: Request = None, db: AsyncSession = Depends(get_db)):
     query = select(Payload).order_by(Payload.category, Payload.created_at)
     if category:
         query = query.where(Payload.category == category)
+    if request and hasattr(request.state, 'user_id'):
+        user_id = request.state.user_id
+        query = query.where((Payload.shared_to_team == True) | (Payload.owner_id == user_id))
     result = await db.execute(query)
     items = result.scalars().all()
     return {"items": [

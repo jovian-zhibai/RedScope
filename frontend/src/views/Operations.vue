@@ -19,6 +19,23 @@
           <el-table-column prop="reachable_cidrs" label="可达网段" min-width="200"><template #default="{ row }">{{ (row.reachable_cidrs || []).join(', ') }}</template></el-table-column>
           <el-table-column prop="tunnel_tool" label="隧道工具" width="100" />
         </el-table>
+
+        <!-- Tunnel Helper -->
+        <div style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px;">隧道搭建命令生成</h4>
+          <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+            <el-select v-model="tunnelTool" size="small" style="width: 120px;">
+              <el-option value="frp" /><el-option value="chisel" /><el-option value="ssh" /><el-option value="suo5" />
+            </el-select>
+            <el-input v-model="tunnelVps" size="small" placeholder="VPS IP" style="width: 140px;" />
+            <el-input-number v-model="tunnelVpsPort" size="small" :min="1" :max="65535" style="width: 120px;" />
+            <el-button size="small" type="primary" @click="getTunnelHelper">生成命令</el-button>
+          </div>
+          <div v-if="tunnelCommands" style="background: var(--rs-bg-secondary); padding: 12px; border-radius: 6px;">
+            <div v-if="tunnelCommands.server"><strong style="font-size: 12px;">服务端:</strong><pre style="font-size: 12px; margin: 4px 0 8px; white-space: pre-wrap;">{{ tunnelCommands.server }}</pre></div>
+            <div v-if="tunnelCommands.client"><strong style="font-size: 12px;">客户端:</strong><pre style="font-size: 12px; margin: 4px 0; white-space: pre-wrap;">{{ tunnelCommands.client }}</pre></div>
+          </div>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="凭据管理" name="credentials">
@@ -59,7 +76,24 @@
             <template #default="{ row }">{{ {active:'🟢',lost:'🔴',cleaned:'⚪'}[row.status] }}</template>
           </el-table-column>
           <el-table-column prop="entry_method" label="入侵方式" min-width="200" />
+          <el-table-column label="操作" width="120">
+            <template #default="{ row }">
+              <el-button size="small" @click="openUploadFile(row)">记录文件</el-button>
+            </template>
+          </el-table-column>
         </el-table>
+
+        <!-- Upload File Record Dialog -->
+        <el-dialog v-model="showUploadFile" title="记录上传文件" width="420px">
+          <el-form :model="uploadFileForm" label-width="80px">
+            <el-form-item label="文件路径"><el-input v-model="uploadFileForm.path" placeholder="/tmp/frpc" /></el-form-item>
+            <el-form-item label="描述"><el-input v-model="uploadFileForm.description" placeholder="frp客户端,用于建立隧道" /></el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="showUploadFile = false">取消</el-button>
+            <el-button type="primary" @click="recordUploadFile">记录</el-button>
+          </template>
+        </el-dialog>
       </el-tab-pane>
 
       <el-tab-pane label="攻击时间线" name="timeline">
@@ -169,6 +203,8 @@ const timeline = ref([]); const cleanupItems = ref([]); const cleanupStats = ref
 const loots = ref([])
 
 const showAddProxy = ref(false); const showAddCred = ref(false); const showAddHost = ref(false); const showAddLoot = ref(false)
+const showUploadFile = ref(false); const uploadFileHostId = ref(null)
+const uploadFileForm = ref({ path: '', description: '' })
 const proxyForm = ref({ name: '', proxy_type: 'socks5', host: '', port: 1080, cidrs_text: '', tunnel_tool: '' })
 const credForm = ref({ cred_type: 'password', username: '', secret: '', source: '', source_host: '' })
 const hostForm = ref({ ip: '', hostname: '', access_level: 'root', shell_type: 'reverse_shell', entry_method: '' })
@@ -195,6 +231,25 @@ const addCredential = async () => { await api.post(`/projects/${pid}/ops/credent
 const addHost = async () => { await api.post(`/projects/${pid}/ops/hosts`, hostForm.value); showAddHost.value = false; await loadAll() }
 const addLoot = async () => { await api.post(`/projects/${pid}/ops/loots`, lootForm.value); showAddLoot.value = false; await loadAll() }
 const markCleaned = async (id) => { await api.put(`/projects/${pid}/ops/cleanup/${id}/mark`); await loadAll() }
+
+const openUploadFile = (host) => { uploadFileHostId.value = host.id; uploadFileForm.value = { path: '', description: '' }; showUploadFile.value = true }
+const recordUploadFile = async () => {
+  if (!uploadFileForm.value.path) return
+  await api.post(`/projects/${pid}/ops/hosts/${uploadFileHostId.value}/upload-file`, uploadFileForm.value)
+  showUploadFile.value = false
+  await loadAll()
+}
+
+const tunnelTool = ref('frp')
+const tunnelVps = ref('')
+const tunnelVpsPort = ref(7000)
+const tunnelCommands = ref(null)
+
+const getTunnelHelper = async () => {
+  try {
+    tunnelCommands.value = await api.get(`/projects/${pid}/ops/proxy/tunnel-helper`, { params: { tool: tunnelTool.value, vps_ip: tunnelVps.value || '1.2.3.4', vps_port: tunnelVpsPort.value } })
+  } catch (e) { tunnelCommands.value = null }
+}
 
 onMounted(loadAll)
 </script>

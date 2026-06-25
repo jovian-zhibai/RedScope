@@ -95,16 +95,18 @@ const renderFallbackCanvas = () => {
   el.style.justifyContent = 'center'
   el.style.gap = '8px'
 
+  const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+
   const addNode = (emoji, label, detail, color) => {
     const d = document.createElement('div')
     d.style.cssText = `background: var(--rs-bg-card); border: 2px solid ${color}; border-radius: 10px; padding: 10px 20px; text-align: center; min-width: 140px;`
-    d.innerHTML = `<div style="font-size:22px;">${emoji}</div><div style="font-weight:bold;font-size:12px;">${label}</div>${detail ? `<div style="font-size:11px;color:#999;">${detail}</div>` : ''}`
+    d.innerHTML = `<div style="font-size:22px;">${esc(emoji)}</div><div style="font-weight:bold;font-size:12px;">${esc(label)}</div>${detail ? `<div style="font-size:11px;color:#999;">${esc(detail)}</div>` : ''}`
     el.appendChild(d)
   }
   const addEdge = (label) => {
     const d = document.createElement('div')
     d.style.cssText = 'text-align:center;'
-    d.innerHTML = `<div style="width:2px;height:20px;background:#555;margin:0 auto;"></div><div style="font-size:11px;color:#999;">${label || '↓'}</div>`
+    d.innerHTML = `<div style="width:2px;height:20px;background:#555;margin:0 auto;"></div><div style="font-size:11px;color:#999;">${esc(label || '↓')}</div>`
     el.appendChild(d)
   }
 
@@ -121,7 +123,7 @@ const renderFallbackCanvas = () => {
       const d = document.createElement('div')
       const color = h.access_level === 'domain_admin' ? '#e74c3c' : '#3498db'
       d.style.cssText = `background:var(--rs-bg-card);border:2px solid ${color};border-radius:8px;padding:8px 14px;text-align:center;`
-      d.innerHTML = `<div style="font-size:18px;">🖥️</div><div style="font-weight:bold;font-size:11px;">${h.ip}</div><div style="font-size:10px;color:#999;">[${h.access_level}]</div>`
+      d.innerHTML = `<div style="font-size:18px;">🖥️</div><div style="font-weight:bold;font-size:11px;">${esc(h.ip)}</div><div style="font-size:10px;color:#999;">[${esc(h.access_level)}]</div>`
       grid.appendChild(d)
     })
     el.appendChild(grid)

@@ -40,7 +40,7 @@ const load = async () => {
 }
 const updateUser = async (id, data) => {
   try { await api.put(`/auth/users/${id}`, data); ElMessage.success('已更新'); await load() }
-  catch (e) { ElMessage.error('更新失败') }
+  catch (e) { ElMessage.error(e.response?.data?.detail || '更新失败') }
 }
 onMounted(load)
 </script>

@@ -27,15 +27,12 @@ async def match_project_vulns(project_id: int, _=Depends(require_project), db: A
     )
     assets = result.scalars().all()
 
-    # vuln_matcher uses sync session, run in executor
-
     matches = []
     with SyncSession() as sync_db:
         for asset in assets:
-            from backend.core.vuln_matcher import match_asset_vulns as sync_match
-            asset_matches = sync_match(sync_db, asset)
+            asset_matches = match_asset_vulns(sync_db, asset)
             for m in asset_matches:
-                existing = await db.execute(
+                existing = sync_db.execute(
                     select(Finding).where(
                         Finding.project_id == project_id,
                         Finding.asset_id == asset.id,
@@ -59,15 +56,15 @@ async def match_project_vulns(project_id: int, _=Depends(require_project), db: A
                     is_verified=False,
                     combined_risk_score=m.confidence * 10,
                 )
-                db.add(finding)
+                sync_db.add(finding)
                 matches.append({
                     "asset": f"{asset.host}:{asset.port or ''}",
                     "vuln": m.vuln.title,
                     "confidence": round(m.confidence, 2),
                     "reason": m.reason,
                 })
+        sync_db.commit()
 
-    await db.flush()
     return {"matched": len(matches), "results": matches}
 
 

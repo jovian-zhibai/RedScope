@@ -37,6 +37,7 @@ class StatusTransition(BaseModel):
 async def list_orders(
     status: str | None = None,
     order_type: str | None = None,
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
     query = select(WorkOrder).order_by(WorkOrder.created_at.desc())
@@ -44,6 +45,10 @@ async def list_orders(
         query = query.where(WorkOrder.status == status)
     if order_type:
         query = query.where(WorkOrder.order_type == order_type)
+
+    if request and hasattr(request.state, 'role') and request.state.role != 'admin':
+        user_id = getattr(request.state, 'user_id', 0)
+        query = query.where((WorkOrder.created_by == user_id) | (WorkOrder.assigned_to == user_id))
 
     result = await db.execute(query)
     orders = result.scalars().all()

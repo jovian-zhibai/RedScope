@@ -38,9 +38,9 @@ def dedup_findings(db: Session, project_id: int) -> dict:
                 primary.cvss_score = dup.cvss_score
 
             # Merge evidence
-            if dup.evidence and primary.evidence:
+            if dup.evidence and primary.evidence and isinstance(primary.evidence, dict) and isinstance(dup.evidence, dict):
                 primary.evidence = {**primary.evidence, f"from_{dup.found_by}": dup.evidence}
-            elif dup.evidence:
+            elif dup.evidence and not primary.evidence:
                 primary.evidence = dup.evidence
 
             # Append engine info

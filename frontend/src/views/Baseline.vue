@@ -14,6 +14,23 @@
       </div>
     </div>
 
+    <!-- Manual Check Results Submission -->
+    <div v-if="manualChecks.length" class="card" style="padding: 16px; margin-bottom: 16px;">
+      <h3 style="margin-bottom: 12px;">手动检查 — {{ lastRunName }} <el-tag size="small" type="warning">手动模式</el-tag></h3>
+      <div style="font-size: 13px; color: var(--rs-text-secondary); margin-bottom: 12px;">请在目标主机上执行每项检查命令，将实际输出填入对应行，然后点击"提交评估"</div>
+      <el-table :data="manualChecks" style="width: 100%;">
+        <el-table-column prop="title" label="检查项" width="200" />
+        <el-table-column prop="command" label="执行命令" min-width="300">
+          <template #default="{ row }"><code style="font-size: 12px; color: var(--rs-accent);">{{ row.command }}</code></template>
+        </el-table-column>
+        <el-table-column prop="expected" label="期望" width="120" />
+        <el-table-column label="实际输出" width="200">
+          <template #default="{ row }"><el-input v-model="row.actual_output" size="small" placeholder="粘贴命令输出" /></template>
+        </el-table-column>
+      </el-table>
+      <el-button type="primary" style="margin-top: 12px;" @click="submitEvaluation" :loading="evaluating">提交评估</el-button>
+    </div>
+
     <!-- Results -->
     <div v-if="scanResults.length" class="card" style="padding: 16px; margin-bottom: 16px;">
       <h3 style="margin-bottom: 12px;">检查结果 — {{ lastRunName }}</h3>
@@ -94,6 +111,7 @@ const showRun = ref(false); const running = ref(false)
 const runKey = ref(''); const runName = ref('')
 const runTarget = ref(''); const runPort = ref(22); const runAuthType = ref('password')
 const runUser = ref('root'); const runPassword = ref('')
+const manualChecks = ref([]); const evaluating = ref(false)
 
 const load = async () => {
   try { const res = await api.get('/baseline/baselines'); baselines.value = res.items || [] }
@@ -118,14 +136,33 @@ const runBaseline = async () => {
       auth_type: runAuthType.value, username: runUser.value,
       password: runPassword.value,
     })
-    scanResults.value = res.results || []
-    lastRunName.value = runName.value
-    showRun.value = false
-    const failed = scanResults.value.filter(r => r.status === 'fail').length
-    if (failed > 0) ElMessage.warning(`检查完成: ${failed} 项不合规`)
-    else ElMessage.success('所有检查项均合规')
+    if (res.status === 'manual_mode') {
+      manualChecks.value = (res.checks || []).map(c => ({ ...c, actual_output: '' }))
+      lastRunName.value = runName.value
+      showRun.value = false
+      ElMessage.info('手动模式: 请逐项执行检查命令并填写结果')
+    } else {
+      scanResults.value = res.results || []
+      lastRunName.value = runName.value
+      showRun.value = false
+    }
   } catch (e) { ElMessage.error('执行失败') }
   finally { running.value = false }
+}
+
+const submitEvaluation = async () => {
+  const results = manualChecks.value.map(c => ({ item_id: c.id, actual_output: c.actual_output || '' }))
+  evaluating.value = true
+  try {
+    const res = await api.post('/baseline/baselines/evaluate', { baseline_key: runKey.value, results })
+    scanResults.value = (res.results || []).map(r => ({
+      ...r, status: r.passed ? 'pass' : 'fail',
+    }))
+    lastRunName.value = `${runName.value} (合规率 ${res.compliance_rate}%)`
+    manualChecks.value = []
+    ElMessage.success(`评估完成: ${res.passed}/${res.total} 项合规`)
+  } catch (e) { ElMessage.error('评估失败') }
+  finally { evaluating.value = false }
 }
 
 onMounted(load)

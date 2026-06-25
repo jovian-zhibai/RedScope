@@ -32,10 +32,10 @@ def validate_url_not_internal(url: str) -> str:
                 if ip in network:
                     raise HTTPException(400, f"目标地址 {hostname} 解析到内网地址，已拦截 (SSRF 防护)")
     except socket.gaierror:
-        pass
+        raise HTTPException(400, f"无法解析域名: {hostname}")
     except HTTPException:
         raise
     except Exception:
-        pass
+        raise HTTPException(400, f"URL 校验失败: {hostname}")
 
     return url

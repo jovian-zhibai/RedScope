@@ -31,5 +31,5 @@ import { ref, onMounted } from 'vue'
 import api from '../stores/api'
 const projects = ref([]); const pid = ref(null); const tasks = ref([])
 onMounted(async () => { try { const r = await api.get('/projects'); projects.value = r.items || [] } catch {} })
-const load = async () => { if (!pid.value) return; try { const r = await api.get(`/projects/${pid.value}/scans`); tasks.value = r.items || [] } catch {} }
+const load = async () => { if (!pid.value) return; try { const r = await api.get(`/projects/${pid.value}/scans`); tasks.value = r.items || [] } catch { tasks.value = [] } }
 </script>

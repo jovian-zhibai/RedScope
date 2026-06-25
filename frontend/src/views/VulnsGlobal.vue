@@ -24,6 +24,7 @@
           <template #default="{ row }"><el-tag :type="row.fix_status === 'fixed' ? 'success' : 'danger'" size="small">{{ {unfixed:'未修复',fixing:'修复中',fixed:'已修复'}[row.fix_status] }}</el-tag></template>
         </el-table-column>
       </el-table>
+      <el-pagination v-if="total > pageSize" :current-page="currentPage" :page-size="pageSize" :total="total" @current-change="(p) => { currentPage = p; load() }" layout="prev, pager, next, total" style="margin-top: 12px; justify-content: flex-end;" />
     </div>
   </div>
 </template>
@@ -31,12 +32,17 @@
 import { ref, onMounted } from 'vue'
 import api from '../stores/api'
 const projects = ref([]); const pid = ref(null); const findings = ref([]); const stats = ref({})
+const total = ref(0); const currentPage = ref(1); const pageSize = ref(20)
 onMounted(async () => { try { const r = await api.get('/projects'); projects.value = r.items || [] } catch {} })
 const load = async () => {
   if (!pid.value) return
   try {
-    const [f, s] = await Promise.all([api.get(`/projects/${pid.value}/findings`), api.get(`/projects/${pid.value}/findings/stats`)])
-    findings.value = f.items || []; stats.value = { ...s.severities, fixed: s.fixed }
+    const [f, s] = await Promise.all([
+      api.get(`/projects/${pid.value}/findings`, { params: { page: currentPage.value, page_size: pageSize.value } }),
+      api.get(`/projects/${pid.value}/findings/stats`),
+    ])
+    findings.value = f.items || []; total.value = f.total || 0
+    stats.value = { ...s.severities, fixed: s.fixed }
   } catch {}
 }
 </script>

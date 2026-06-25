@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /install /usr/local
 
-RUN groupadd -r redscope && useradd -r -g redscope -s /bin/false redscope
+RUN groupadd -r redscope && useradd -r -g redscope -m -d /home/redscope -s /bin/bash redscope
 COPY backend /app/backend
 COPY plugins /app/plugins
 COPY pipelines /app/pipelines

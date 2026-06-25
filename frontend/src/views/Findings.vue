@@ -18,17 +18,17 @@
 
     <!-- Filters -->
     <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-      <el-select v-model="filterSev" placeholder="等级" clearable size="small" style="width: 100px;" @change="load">
+      <el-select v-model="filterSev" placeholder="等级" clearable size="small" style="width: 100px;" @change="currentPage = 1; load()">
         <el-option value="critical" label="严重" /><el-option value="high" label="高危" />
         <el-option value="medium" label="中危" /><el-option value="low" label="低危" />
       </el-select>
-      <el-select v-model="filterStatus" placeholder="修复状态" clearable size="small" style="width: 120px;" @change="load">
+      <el-select v-model="filterStatus" placeholder="修复状态" clearable size="small" style="width: 120px;" @change="currentPage = 1; load()">
         <el-option value="unfixed" label="未修复" /><el-option value="fixing" label="修复中" />
         <el-option value="fixed" label="已修复" />
       </el-select>
     </div>
 
-    <el-table :data="pagedFindings" style="width: 100%;" @selection-change="onSelect" @row-click="openDetail">
+    <el-table :data="findings" style="width: 100%;" @selection-change="onSelect" @row-click="openDetail">
       <el-table-column type="selection" width="40" />
       <el-table-column prop="title" label="漏洞名称" min-width="250" />
       <el-table-column prop="severity" label="等级" width="90">
@@ -66,7 +66,7 @@
     </el-table>
 
     <!-- Finding Detail Drawer -->
-    <el-pagination v-if="filteredFindings.length > pageSize" :current-page="currentPage" :page-size="pageSize" :total="filteredFindings.length" @current-change="currentPage = $event" layout="prev, pager, next, total" style="margin-top: 12px; justify-content: flex-end;" />
+    <el-pagination v-if="totalFindings > pageSize" :current-page="currentPage" :page-size="pageSize" :total="totalFindings" @current-change="(p) => { currentPage = p; load() }" layout="prev, pager, next, total" style="margin-top: 12px; justify-content: flex-end;" />
 
     <el-drawer v-model="showDetail" :title="detailFinding?.title" size="600px">
       <div v-if="detailFinding" style="padding: 0 8px;">
@@ -84,6 +84,10 @@
 
         <h4 style="margin: 16px 0 8px; color: var(--rs-text-primary);">修复建议</h4>
         <div style="font-size: 13px; white-space: pre-wrap; color: var(--rs-text-secondary);">{{ detailFinding.solution || '无修复建议' }}</div>
+
+        <div style="margin: 12px 0;">
+          <el-button size="small" @click="aiGenerateDesc" :loading="aiGenerating">AI 生成描述/修复建议</el-button>
+        </div>
 
         <h4 style="margin: 16px 0 8px; color: var(--rs-text-primary);">修复状态</h4>
         <div style="display: flex; gap: 8px;">
@@ -111,7 +115,7 @@
             <el-button size="small">上传截图</el-button>
           </el-upload>
           <div v-if="findingScreenshots.length" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
-            <img v-for="s in findingScreenshots" :key="s.id" :src="s.view_url" style="width: 120px; border-radius: 4px; cursor: pointer;" @click="window.open(s.view_url, '_blank')" />
+            <img v-for="s in findingScreenshots" :key="s.id" :src="s.view_url" style="width: 120px; border-radius: 4px; cursor: pointer;" @click="previewImage(s.view_url)" />
           </div>
         </div>
 
@@ -159,14 +163,16 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../stores/api'
+import { logSessionActivity } from '../stores/api'
 
 const route = useRoute()
 const pid = route.params.id
 const findings = ref([])
+const totalFindings = ref(0)
 const stats = ref({})
 const showAdd = ref(false)
 const showDetail = ref(false)
@@ -179,25 +185,21 @@ const showRiskAccept = ref(false)
 const riskForm = ref({ client_name: '', accepted_by: '', reason: '' })
 const findingScreenshots = ref([])
 const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token')}` }
+const aiGenerating = ref(false)
 
-const filteredFindings = computed(() => {
-  let list = findings.value
-  if (filterSev.value) list = list.filter(f => f.severity === filterSev.value)
-  if (filterStatus.value) list = list.filter(f => f.fix_status === filterStatus.value)
-  return list
-})
+const previewImage = (url) => { window.open(url, '_blank') }
 
 const pageSize = ref(20)
 const currentPage = ref(1)
-const pagedFindings = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredFindings.value.slice(start, start + pageSize.value)
-})
 
 const load = async () => {
   try {
-    const [res, st] = await Promise.all([api.get(`/projects/${pid}/findings`), api.get(`/projects/${pid}/findings/stats`)])
+    const params = { page: currentPage.value, page_size: pageSize.value }
+    if (filterSev.value) params.severity = filterSev.value
+    if (filterStatus.value) params.fix_status = filterStatus.value
+    const [res, st] = await Promise.all([api.get(`/projects/${pid}/findings`, { params }), api.get(`/projects/${pid}/findings/stats`)])
     findings.value = res.items || []
+    totalFindings.value = res.total || 0
     stats.value = { ...st.severities, fix_rate: st.fix_rate }
   } catch (e) { ElMessage.error('加载漏洞列表失败') }
 }
@@ -205,6 +207,7 @@ const load = async () => {
 const addFinding = async () => {
   await api.post(`/projects/${pid}/findings`, form.value)
   showAdd.value = false
+  logSessionActivity(pid, '手动录入漏洞', form.value.title)
   await load()
 }
 
@@ -222,6 +225,28 @@ const loadFindingScreenshots = async (findingId) => {
 const onFindingScreenshot = () => {
   ElMessage.success('截图已上传')
   if (detailFinding.value) loadFindingScreenshots(detailFinding.value.id)
+}
+
+const aiGenerateDesc = async () => {
+  if (!detailFinding.value) return
+  aiGenerating.value = true
+  try {
+    const res = await api.post(`/projects/${pid}/ai-vuln-description`, {
+      title: detailFinding.value.title,
+      vuln_type: detailFinding.value.vuln_type,
+      severity: detailFinding.value.severity,
+      raw_detail: detailFinding.value.detail || '',
+    })
+    if (res.description) {
+      await api.put(`/projects/${pid}/findings/${detailFinding.value.id}`, { description: res.description, solution: res.solution })
+      detailFinding.value.description = res.description
+      detailFinding.value.solution = res.solution
+      ElMessage.success('AI 描述已生成并保存')
+    } else {
+      ElMessage.warning(res.error || 'AI 生成失败')
+    }
+  } catch (e) { ElMessage.error('AI 生成失败，请确认已配置 LLM API Key') }
+  finally { aiGenerating.value = false }
 }
 
 const acceptRisk = async () => {
