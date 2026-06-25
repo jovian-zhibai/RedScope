@@ -2,7 +2,7 @@
 
 from fastapi import Request, HTTPException, Depends
 
-ROLE_HIERARCHY = {"admin": 4, "manager": 3, "engineer": 2, "viewer": 1}
+ROLE_HIERARCHY = {"admin": 4, "manager": 3, "leader": 3, "engineer": 2, "viewer": 1}
 
 
 class RequireRole:
@@ -37,7 +37,10 @@ class RequireProjectAccess:
             if not project:
                 raise HTTPException(404, "项目不存在")
             if project.created_by != user_id:
-                raise HTTPException(403, "无权访问该项目")
+                # Check tenant membership
+                tenant_id = getattr(request.state, "tenant_id", None)
+                if not tenant_id or project.tenant_id != tenant_id:
+                    raise HTTPException(403, "无权访问该项目")
         return user_id
 
 

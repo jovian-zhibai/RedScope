@@ -23,6 +23,8 @@ class PaginatedResponse(BaseModel):
 
 
 async def paginate(db: AsyncSession, query, page: int = 1, page_size: int = 20) -> dict:
+    page_size = min(page_size, 100)
+    page = max(page, 1)
     count_query = select(func.count()).select_from(query.subquery())
     total = await db.scalar(count_query) or 0
 

@@ -2,9 +2,12 @@
   <div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
       <h2>项目管理</h2>
-      <el-button type="primary" @click="showCreate = true">
-        <el-icon><Plus /></el-icon> 新建项目
-      </el-button>
+      <div style="display: flex; gap: 8px;">
+        <el-button size="small" @click="showTemplates = true">从模板创建</el-button>
+        <el-button type="primary" @click="showCreate = true">
+          <el-icon><Plus /></el-icon> 新建项目
+        </el-button>
+      </div>
     </div>
 
     <el-table :data="pagedProjects" style="width: 100%;" row-class-name="dark-row" @row-click="goToProject">
@@ -65,6 +68,30 @@
         <el-button type="primary" @click="createProject" :loading="creating">创建项目</el-button>
       </template>
     </el-dialog>
+
+    <!-- Templates Dialog -->
+    <el-dialog v-model="showTemplates" title="从模板创建项目" width="600px">
+      <div v-if="templates.length" style="margin-bottom: 16px;">
+        <div v-for="t in templates" :key="t.id" class="card" style="padding: 12px; margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;"
+          :style="{ borderLeft: selectedTemplate === t.id ? '3px solid var(--rs-accent)' : '' }"
+          @click="selectedTemplate = t.id">
+          <div>
+            <strong>{{ t.name }}</strong>
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">{{ t.description || t.mode }}</div>
+          </div>
+          <el-tag size="small">{{ {combat:'实战',range:'靶场',research:'研究'}[t.mode] || t.mode }}</el-tag>
+        </div>
+      </div>
+      <el-empty v-else description="暂无模板。在项目详情页可将项目保存为模板。" />
+      <el-form v-if="selectedTemplate" label-width="80px" style="margin-top: 12px;">
+        <el-form-item label="项目名称"><el-input v-model="templateProjectName" placeholder="新项目名称" /></el-form-item>
+        <el-form-item label="客户名称"><el-input v-model="templateClientName" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showTemplates = false">取消</el-button>
+        <el-button type="primary" :disabled="!selectedTemplate" @click="createFromTemplate">创建</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -79,6 +106,11 @@ const projects = ref([])
 const showCreate = ref(false)
 const creating = ref(false)
 const form = ref({ name: '', mode: 'combat', description: '', client_name: '', auth_start_date: '', auth_end_date: '' })
+const showTemplates = ref(false)
+const templates = ref([])
+const selectedTemplate = ref(null)
+const templateProjectName = ref('')
+const templateClientName = ref('')
 const pageSize = ref(20)
 const currentPage = ref(1)
 const pagedProjects = computed(() => {
@@ -105,5 +137,25 @@ const createProject = async () => {
 
 const goToProject = (row) => router.push(`/projects/${row.id}`)
 
-onMounted(loadProjects)
+const loadTemplates = async () => {
+  try { const res = await api.get('/templates'); templates.value = res.items || [] } catch {}
+}
+
+const createFromTemplate = async () => {
+  if (!selectedTemplate.value) return
+  try {
+    const res = await api.post(`/templates/apply/${selectedTemplate.value}`, {
+      name: templateProjectName.value || '新项目',
+      client_name: templateClientName.value,
+    })
+    showTemplates.value = false
+    ElMessage.success(`项目已创建: ${res.name}`)
+    router.push(`/projects/${res.id}`)
+  } catch (e) { ElMessage.error('创建失败') }
+}
+
+onMounted(async () => {
+  await loadProjects()
+  await loadTemplates()
+})
 </script>

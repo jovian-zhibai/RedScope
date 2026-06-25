@@ -29,6 +29,7 @@ def dedup_findings(db: Session, project_id: int) -> dict:
             continue
 
         primary = group[0]
+        engine_set = {primary.found_by}
         for dup in group[1:]:
             # Keep higher severity
             severity_order = {"critical": 5, "high": 4, "medium": 3, "low": 2, "info": 1}
@@ -43,13 +44,26 @@ def dedup_findings(db: Session, project_id: int) -> dict:
                 primary.evidence = dup.evidence
 
             # Append engine info
-            if dup.found_by and dup.found_by not in (primary.found_by or ""):
-                primary.found_by = f"{primary.found_by},{dup.found_by}"
+            if dup.found_by:
+                engine_set.add(dup.found_by)
+                if dup.found_by not in (primary.found_by or ""):
+                    primary.found_by = f"{primary.found_by},{dup.found_by}"
 
             # Mark as duplicate (NOT false positive — dedup != false positive)
             dup.fix_status = "merged"
             dup.description = f"[已合并到 #{primary.id}] {dup.description or ''}"
             merged_count += 1
+
+        # Multi-engine consensus scoring
+        engine_count = len(engine_set)
+        confidence = min(engine_count / 3.0, 1.0)
+        if not primary.combined_risk_score:
+            base = severity_order.get(primary.severity, 3) * 2
+            primary.combined_risk_score = round(base * confidence, 1)
+        if not primary.evidence:
+            primary.evidence = {}
+        primary.evidence["_engine_count"] = engine_count
+        primary.evidence["_confidence"] = round(confidence, 2)
 
     db.commit()
     return {"total_findings": len(findings), "duplicates_merged": merged_count}

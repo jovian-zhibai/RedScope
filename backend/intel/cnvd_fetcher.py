@@ -1,4 +1,8 @@
-"""CNVD vulnerability fetcher: syncs Chinese national vulnerability database."""
+"""CNVD vulnerability fetcher: syncs Chinese national vulnerability database.
+NOTE: CNVD does not provide a public API. This module uses web scraping which may
+break if CNVD changes their page structure. The fetch_latest() function returns
+real scraped data when CNVD is reachable, and empty results otherwise.
+For production use, consider subscribing to a commercial threat intelligence feed."""
 
 import httpx
 import re
@@ -91,7 +95,10 @@ def import_from_json(json_path: str):
                     existing.cve_id = v["cve_id"]
                 continue
 
-            vuln = VulnKnowledge(**{k: v2 for k, v2 in v.items() if hasattr(VulnKnowledge, k)})
+            ALLOWED_IMPORT_FIELDS = {"cve_id", "cnvd_id", "title", "severity", "cvss_score",
+                                     "description", "solution", "affected_software", "affected_vendor",
+                                     "affected_version", "vuln_type", "weapon_stage", "has_poc", "has_exp", "tags"}
+            vuln = VulnKnowledge(**{k: v2 for k, v2 in v.items() if k in ALLOWED_IMPORT_FIELDS})
             vuln.source = "cnvd_import"
             db.add(vuln)
         db.commit()

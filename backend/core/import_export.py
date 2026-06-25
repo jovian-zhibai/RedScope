@@ -35,7 +35,9 @@ def import_assets_from_csv(db: Session, project_id: int, csv_content: str) -> in
 
 def import_nessus_xml(db: Session, project_id: int, xml_content: str) -> int:
     import xml.etree.ElementTree as ET
-    root = ET.fromstring(xml_content)
+    from xml.etree.ElementTree import XMLParser
+    parser = XMLParser()
+    root = ET.fromstring(xml_content, parser=parser)
     count = 0
 
     for report_host in root.findall(".//ReportHost"):
@@ -56,7 +58,7 @@ def import_nessus_xml(db: Session, project_id: int, xml_content: str) -> int:
 
             finding = Finding(
                 project_id=project_id,
-                title=f"{plugin_name} - {host_name}:{port}",
+                title=f"{plugin_name} - {host_name}:{port}"[:500],
                 vuln_type="nessus_finding",
                 severity=severity,
                 description=desc[:4000],

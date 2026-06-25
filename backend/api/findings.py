@@ -82,15 +82,16 @@ async def finding_stats(project_id: int, _=Depends(require_project), db: AsyncSe
     severities = {}
     for sev in ["critical", "high", "medium", "low", "info"]:
         count = await db.scalar(
-            select(func.count()).where(Finding.project_id == project_id, Finding.severity == sev)
+            select(func.count()).where(Finding.project_id == project_id, Finding.severity == sev, Finding.deleted_at == None)
         )
         severities[sev] = count
 
     total = sum(severities.values())
     unfixed = await db.scalar(
-        select(func.count()).where(Finding.project_id == project_id, Finding.fix_status == "unfixed")
+        select(func.count()).where(Finding.project_id == project_id, Finding.fix_status == "unfixed", Finding.deleted_at == None)
     )
-    return {"total": total, "severities": severities, "unfixed": unfixed, "fix_rate": round((total - unfixed) / total * 100, 1) if total > 0 else 0}
+    fixed = total - unfixed
+    return {"total": total, "severities": severities, "unfixed": unfixed, "fixed": fixed, "fix_rate": round(fixed / total * 100, 1) if total > 0 else 0}
 
 
 @router.put("/{finding_id}")
@@ -98,8 +99,10 @@ async def update_finding(project_id: int, finding_id: int, req: dict, _=Depends(
     finding = await db.get(Finding, finding_id)
     if not finding or finding.project_id != project_id:
         raise HTTPException(404, "漏洞不存在")
+    UPDATABLE_FIELDS = {"title", "vuln_type", "severity", "cvss_score", "description", "detail",
+                        "solution", "fix_status", "is_verified", "is_false_positive", "evidence", "attck_techniques"}
     for field, value in req.items():
-        if hasattr(finding, field):
+        if field in UPDATABLE_FIELDS:
             setattr(finding, field, value)
     await db.flush()
     return {"id": finding.id, "status": "updated"}

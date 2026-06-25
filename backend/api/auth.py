@@ -8,6 +8,7 @@ from jose import jwt
 from backend.config import get_settings
 from backend.database import get_db
 from backend.models.user import User
+from backend.models.tenant import TenantUser
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -47,6 +48,12 @@ def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     to_encode["exp"] = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+
+
+async def _get_user_tenant_id(db, user_id: int) -> int | None:
+    result = await db.execute(select(TenantUser).where(TenantUser.user_id == user_id))
+    tu = result.scalar_one_or_none()
+    return tu.tenant_id if tu else None
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -90,7 +97,8 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(403, "账号已被禁用")
 
     user.last_login_at = datetime.utcnow()
-    token = create_access_token({"sub": str(user.id), "username": user.username, "role": user.role})
+    tenant_id = await _get_user_tenant_id(db, user.id)
+    token = create_access_token({"sub": str(user.id), "username": user.username, "role": user.role, "tenant_id": tenant_id})
     return TokenResponse(
         access_token=token,
         user={"id": user.id, "username": user.username, "display_name": user.display_name, "role": user.role},
@@ -188,6 +196,7 @@ async def clone_project(project_id: int, request: Request, db: AsyncSession = De
         auth_start_date=project.auth_start_date,
         auth_end_date=project.auth_end_date,
         created_by=request.state.user_id,
+        tenant_id=getattr(request.state, 'tenant_id', project.tenant_id),
     )
     db.add(new_project)
     await db.flush()
@@ -197,7 +206,8 @@ async def clone_project(project_id: int, request: Request, db: AsyncSession = De
         new_rule = ScopeRule(
             project_id=new_project.id,
             rule_type=rule.rule_type,
-            value=rule.value,
+            target_type=rule.target_type,
+            target_value=rule.target_value,
             description=rule.description,
         )
         db.add(new_rule)

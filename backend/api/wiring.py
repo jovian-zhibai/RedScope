@@ -2,7 +2,7 @@
 ATT&CK mapping, OPSEC monitor, import/export, pipeline execution) to endpoints."""
 
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -75,16 +75,10 @@ async def match_project_vulns(project_id: int, _=Depends(require_project), db: A
 
 @router.post("/projects/{project_id}/dedup")
 async def dedup_project_findings(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    from backend.config import get_settings
     from backend.core.dedup import dedup_findings
+    from backend.database_sync import SyncSession as SS
 
-    settings = get_settings()
-    sync_engine = create_engine(settings.database_url.replace("+asyncpg", ""))
-    SyncSession = sessionmaker(sync_engine)
-
-    with SyncSession() as sync_db:
+    with SS() as sync_db:
         result = dedup_findings(sync_db, project_id)
 
     return result
@@ -186,7 +180,7 @@ async def check_opsec(project_id: int, req: OpsecCheckRequest, _=Depends(require
     if not project:
         raise HTTPException(404, "项目不存在")
 
-    now = datetime.now()
+    now = datetime.now(tz=None)  # Server local time for OPSEC window check
     is_work_hours = 9 <= now.hour <= 18 and now.weekday() < 5
 
     warnings = check_scan_opsec(
@@ -208,18 +202,12 @@ async def check_opsec(project_id: int, req: OpsecCheckRequest, _=Depends(require
 @router.post("/projects/{project_id}/import/csv-assets")
 async def import_csv_assets(project_id: int, _=Depends(require_project), file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     from backend.core.import_export import import_assets_from_csv
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    from backend.config import get_settings
+    from backend.database_sync import SyncSession as SS
 
     content = await file.read()
     csv_text = content.decode("utf-8-sig")
 
-    settings = get_settings()
-    sync_engine = create_engine(settings.database_url.replace("+asyncpg", ""))
-    SyncSession = sessionmaker(sync_engine)
-
-    with SyncSession() as sync_db:
+    with SS() as sync_db:
         count = import_assets_from_csv(sync_db, project_id, csv_text)
 
     return {"imported": count, "message": f"成功导入 {count} 个资产"}
@@ -228,18 +216,12 @@ async def import_csv_assets(project_id: int, _=Depends(require_project), file: U
 @router.post("/projects/{project_id}/import/nessus")
 async def import_nessus_report(project_id: int, _=Depends(require_project), file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     from backend.core.import_export import import_nessus_xml
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    from backend.config import get_settings
+    from backend.database_sync import SyncSession as SS
 
     content = await file.read()
     xml_text = content.decode("utf-8")
 
-    settings = get_settings()
-    sync_engine = create_engine(settings.database_url.replace("+asyncpg", ""))
-    SyncSession = sessionmaker(sync_engine)
-
-    with SyncSession() as sync_db:
+    with SS() as sync_db:
         count = import_nessus_xml(sync_db, project_id, xml_text)
 
     return {"imported": count, "message": f"成功导入 {count} 个漏洞"}
@@ -248,16 +230,10 @@ async def import_nessus_report(project_id: int, _=Depends(require_project), file
 @router.get("/projects/{project_id}/export/findings-csv")
 async def export_findings_csv(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     from backend.core.import_export import export_findings_csv
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    from backend.config import get_settings
+    from backend.database_sync import SyncSession as SS
     import io
 
-    settings = get_settings()
-    sync_engine = create_engine(settings.database_url.replace("+asyncpg", ""))
-    SyncSession = sessionmaker(sync_engine)
-
-    with SyncSession() as sync_db:
+    with SS() as sync_db:
         csv_content = export_findings_csv(sync_db, project_id)
 
     return StreamingResponse(
@@ -270,15 +246,9 @@ async def export_findings_csv(project_id: int, _=Depends(require_project), db: A
 @router.get("/projects/{project_id}/export/archive")
 async def export_project_archive(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     from backend.core.import_export import export_project_archive
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    from backend.config import get_settings
+    from backend.database_sync import SyncSession as SS
 
-    settings = get_settings()
-    sync_engine = create_engine(settings.database_url.replace("+asyncpg", ""))
-    SyncSession = sessionmaker(sync_engine)
-
-    with SyncSession() as sync_db:
+    with SS() as sync_db:
         archive = export_project_archive(sync_db, project_id)
 
     return archive
@@ -363,6 +333,8 @@ class LLMTestRequest(BaseModel):
 @router.post("/projects/{project_id}/llm-security-test")
 async def run_llm_security_test(project_id: int, req: LLMTestRequest, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     from backend.ai.llm_security_test import LLMSecurityTester
+    from backend.core.ssrf_filter import validate_url_not_internal
+    validate_url_not_internal(req.target_url)
 
     tester = LLMSecurityTester(
         target_url=req.target_url,
@@ -448,8 +420,12 @@ class NotifyTestRequest(BaseModel):
 
 
 @router.post("/notify/test")
-async def test_notification(req: NotifyTestRequest):
+async def test_notification(req: NotifyTestRequest, request: Request):
+    if not hasattr(request.state, 'role') or request.state.role != 'admin':
+        raise HTTPException(403, "仅管理员可测试通知")
     from backend.core.notify import send_webhook
+    from backend.core.ssrf_filter import validate_url_not_internal
+    validate_url_not_internal(req.webhook_url)
     try:
         await send_webhook(req.channel, req.webhook_url, "RedScope 测试通知", req.message)
         return {"status": "sent"}
@@ -462,20 +438,240 @@ async def test_notification(req: NotifyTestRequest):
 @router.get("/projects/{project_id}/proxy-route")
 async def get_proxy_route(project_id: int, target: str, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     from backend.core.proxy_router import ProxyRouter
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    from backend.config import get_settings
+    from backend.database_sync import SyncSession as SS
 
-    settings = get_settings()
-    sync_engine = create_engine(settings.database_url.replace("+asyncpg", ""))
-    SyncSession = sessionmaker(sync_engine)
-
-    with SyncSession() as sync_db:
+    with SS() as sync_db:
         router_inst = ProxyRouter(sync_db, project_id)
         route = router_inst.get_route(target)
         proxychains_conf = router_inst.generate_proxychains_config(target)
 
-
     if route:
         return {"proxy_url": route.proxy_url, "chain": route.chain, "proxychains_config": proxychains_conf}
     return {"proxy_url": None, "chain": [], "message": "该目标可直连,无需代理"}
+
+
+# ─── AI Security Assistant ──────────────────────────────
+
+
+class AIChatRequest(BaseModel):
+    message: str
+    project_id: int | None = None
+
+
+class AIScanRecommendRequest(BaseModel):
+    asset_ids: list[int] = []
+
+
+@router.post("/ai/chat")
+async def ai_chat(req: AIChatRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    from backend.ai.assistant import chat_with_assistant
+
+    context = ""
+    if req.project_id:
+        from backend.models.project import Project
+        project = await db.get(Project, req.project_id)
+        if project:
+            from backend.models.finding import Finding
+            from backend.models.asset import Asset
+            finding_count = await db.scalar(select(func.count()).where(Finding.project_id == req.project_id))
+            asset_count = await db.scalar(select(func.count()).where(Asset.project_id == req.project_id))
+            context = f"项目: {project.name}, 模式: {project.mode}, 资产: {asset_count}, 漏洞: {finding_count}"
+
+    reply = await chat_with_assistant(req.message, context)
+    return {"reply": reply}
+
+
+@router.post("/projects/{project_id}/ai/recommend-scan")
+async def ai_recommend_scan(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+    from backend.ai.assistant import recommend_scan_strategy
+    from backend.models.asset import Asset
+
+    result = await db.execute(
+        select(Asset).where(Asset.project_id == project_id, Asset.deleted_at == None).limit(50)
+    )
+    assets = result.scalars().all()
+    asset_info = [
+        {"host": a.host, "port": a.port, "server": a.server, "application": a.application,
+         "app_version": a.app_version, "os": a.os, "framework": a.framework}
+        for a in assets
+    ]
+    recommendations = await recommend_scan_strategy(asset_info)
+    return recommendations
+
+
+@router.post("/projects/{project_id}/ai/attack-path")
+async def ai_attack_path(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+    from backend.ai.assistant import infer_attack_path
+    from backend.models.finding import Finding
+    from backend.models.asset import Asset
+    from backend.models.operational import CompromisedHost
+
+    findings_result = await db.execute(
+        select(Finding).where(Finding.project_id == project_id, Finding.deleted_at == None)
+        .order_by(Finding.severity).limit(30)
+    )
+    findings = [{"title": f.title, "severity": f.severity, "vuln_type": f.vuln_type,
+                 "asset_id": f.asset_id, "fix_status": f.fix_status}
+                for f in findings_result.scalars().all()]
+
+    hosts_result = await db.execute(
+        select(CompromisedHost).where(CompromisedHost.project_id == project_id)
+    )
+    hosts = [{"ip": h.ip, "hostname": h.hostname, "access_level": h.access_level,
+              "shell_type": h.shell_type, "status": h.status}
+             for h in hosts_result.scalars().all()]
+
+    assets_result = await db.execute(
+        select(Asset).where(Asset.project_id == project_id, Asset.deleted_at == None).limit(20)
+    )
+    assets = [{"host": a.host, "port": a.port, "server": a.server, "application": a.application}
+              for a in assets_result.scalars().all()]
+
+    path = await infer_attack_path(findings, hosts, assets)
+    return {"attack_path": path}
+
+
+@router.post("/ai/query")
+async def ai_natural_language_query(req: AIChatRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    from backend.ai.assistant import natural_language_query
+    from backend.models.finding import Finding
+    from backend.models.asset import Asset
+
+    parsed = await natural_language_query(req.message)
+    if "error" in parsed:
+        return {"error": parsed["error"], "results": []}
+
+    table = parsed.get("table", "findings")
+    conditions = parsed.get("conditions", [])
+    description = parsed.get("description", "")
+
+    ALLOWED_FINDING_FIELDS = {"severity", "vuln_type", "fix_status", "is_verified", "found_by", "title"}
+    ALLOWED_ASSET_FIELDS = {"host", "port", "application", "server", "importance", "is_alive", "scope_status"}
+    ALLOWED_OPS = {"=", "!=", "like"}
+
+    if table == "findings":
+        query = select(Finding)
+        if req.project_id:
+            query = query.where(Finding.project_id == req.project_id)
+        query = query.where(Finding.deleted_at == None)
+        for cond in conditions:
+            field = cond.get("field")
+            op = cond.get("op", "=")
+            value = cond.get("value")
+            if field not in ALLOWED_FINDING_FIELDS or op not in ALLOWED_OPS:
+                continue
+            col = getattr(Finding, field)
+            if op == "=":
+                query = query.where(col == value)
+            elif op == "!=":
+                query = query.where(col != value)
+            elif op == "like":
+                query = query.where(col.ilike(f"%{str(value)[:100]}%"))
+        query = query.limit(50)
+        result = await db.execute(query)
+        items = [{"id": f.id, "title": f.title, "severity": f.severity,
+                  "vuln_type": f.vuln_type, "fix_status": f.fix_status}
+                 for f in result.scalars().all()]
+    else:
+        query = select(Asset)
+        if req.project_id:
+            query = query.where(Asset.project_id == req.project_id)
+        query = query.where(Asset.deleted_at == None)
+        for cond in conditions:
+            field = cond.get("field")
+            op = cond.get("op", "=")
+            value = cond.get("value")
+            if field not in ALLOWED_ASSET_FIELDS or op not in ALLOWED_OPS:
+                continue
+            col = getattr(Asset, field)
+            if op == "=":
+                query = query.where(col == value)
+            elif op == "like":
+                query = query.where(col.ilike(f"%{str(value)[:100]}%"))
+        query = query.limit(50)
+        result = await db.execute(query)
+        items = [{"id": a.id, "host": a.host, "port": a.port,
+                  "application": a.application, "importance": a.importance}
+                 for a in result.scalars().all()]
+
+    return {"description": description, "table": table, "count": len(items), "results": items}
+
+
+# ─── Auto Attack Chain Builder ───────────────────────────
+
+@router.post("/projects/{project_id}/ai/build-attack-chain")
+async def ai_build_attack_chain(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+    from backend.ai.assistant import infer_attack_path
+    from backend.models.finding import Finding, AttackChain, AttackChainStep
+    from backend.models.asset import Asset
+    from backend.models.operational import CompromisedHost
+
+    findings_result = await db.execute(
+        select(Finding).where(Finding.project_id == project_id, Finding.deleted_at == None)
+        .order_by(Finding.severity).limit(30)
+    )
+    findings = [{"id": f.id, "title": f.title, "severity": f.severity, "vuln_type": f.vuln_type, "asset_id": f.asset_id}
+                for f in findings_result.scalars().all()]
+
+    hosts_result = await db.execute(select(CompromisedHost).where(CompromisedHost.project_id == project_id))
+    hosts = [{"ip": h.ip, "hostname": h.hostname, "access_level": h.access_level} for h in hosts_result.scalars().all()]
+
+    assets_result = await db.execute(select(Asset).where(Asset.project_id == project_id, Asset.deleted_at == None).limit(20))
+    assets = [{"host": a.host, "port": a.port, "server": a.server, "application": a.application} for a in assets_result.scalars().all()]
+
+    path_text = await infer_attack_path(findings, hosts, assets)
+
+    chain = AttackChain(
+        project_id=project_id,
+        chain_name=f"AI 推导攻击链 - {datetime.now().strftime('%m/%d %H:%M')}",
+        description=path_text,
+        combined_severity="critical" if any(f["severity"] == "critical" for f in findings) else "high",
+    )
+    db.add(chain)
+    await db.flush()
+
+    return {"chain_id": chain.id, "attack_path": path_text}
+
+
+# ─── AI Repair Roadmap ──────────────────────────────────
+
+@router.post("/projects/{project_id}/ai/repair-roadmap")
+async def ai_repair_roadmap(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+    from backend.ai.llm_client import get_llm_client
+    from backend.models.finding import Finding
+    from backend.models.asset import Asset
+
+    findings_result = await db.execute(
+        select(Finding).where(
+            Finding.project_id == project_id,
+            Finding.deleted_at == None,
+            Finding.fix_status.in_(["unfixed", "fixing"]),
+        ).order_by(Finding.severity)
+    )
+    findings = findings_result.scalars().all()
+
+    import json
+    findings_data = [
+        {"title": f.title, "severity": f.severity, "vuln_type": f.vuln_type,
+         "cvss": float(f.cvss_score) if f.cvss_score else None,
+         "risk_score": float(f.combined_risk_score) if f.combined_risk_score else None,
+         "fix_status": f.fix_status}
+        for f in findings
+    ]
+
+    client = get_llm_client()
+    if not client.api_key:
+        return {"roadmap": "AI 未配置，请设置 LLM_API_KEY", "findings_count": len(findings)}
+
+    prompt = """你是安全顾问。根据以下未修复漏洞列表，生成一份「优先修复路线图」。
+
+要求：
+1. 按紧急程度分为：本周必修、本月重点、下季度规划
+2. 每个分组说明理由（CVSS、武器化程度、资产重要性）
+3. 给出具体修复建议和预估工时
+4. 最后给一段给客户 CTO 看的总结（3句话）
+
+漏洞数据："""
+
+    roadmap = await client.chat(prompt, json.dumps(findings_data[:30], ensure_ascii=False))
+    return {"roadmap": roadmap, "findings_count": len(findings)}

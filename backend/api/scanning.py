@@ -107,7 +107,14 @@ async def stop_scan(project_id: int, scan_id: int, _=Depends(require_project), d
         raise HTTPException(404, "任务不存在")
 
     from backend.core.engine_orchestrator import orchestrator
-    await orchestrator.stop_engine(str(scan_id))
+    # Worker registers jobs as "{task_id}_{engine}_{target_index}", stop all matching this task
+    stopped = 0
+    for key in list(orchestrator._running_jobs.keys()):
+        if key.startswith(f"{scan_id}_"):
+            await orchestrator.stop_engine(key)
+            stopped += 1
+    if stopped == 0:
+        await orchestrator.stop_engine(str(scan_id))
     task.status = "stopped"
     task.stopped_reason = "用户手动停止"
     await db.flush()

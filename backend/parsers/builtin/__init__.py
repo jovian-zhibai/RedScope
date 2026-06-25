@@ -3,7 +3,18 @@
 import hashlib
 import json
 import xml.etree.ElementTree as ET
+from xml.etree.ElementTree import XMLParser
 from pathlib import Path
+
+
+def _safe_parse_xml(file_path: str):
+    parser = XMLParser()
+    tree = ET.parse(file_path, parser=parser)
+    return tree
+
+def _safe_fromstring(xml_text: str):
+    parser = XMLParser()
+    return ET.fromstring(xml_text, parser=parser)
 
 
 def parse_output(engine_name: str, output_format: str, output_dir: str, output_path: str) -> list[dict]:
@@ -32,7 +43,7 @@ def _dedup_hash(*args) -> str:
 def parse_nmap(file_path: str, output_dir: str) -> list[dict]:
     results = []
     try:
-        tree = ET.parse(file_path)
+        tree = _safe_parse_xml(file_path)
         root = tree.getroot()
         for host in root.findall(".//host"):
             addr_el = host.find("address")

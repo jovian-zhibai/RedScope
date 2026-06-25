@@ -23,7 +23,13 @@ class ProxyRouter:
         for node in self.nodes.values():
             if self._target_in_cidrs(target, node.reachable_cidrs):
                 chain = self._build_chain(node)
-                proxy_url = f"{node.proxy_type}://{node.host}:{node.port}"
+                auth = ""
+                if node.username_enc:
+                    from backend.utils.crypto import decrypt_value
+                    username = decrypt_value(node.username_enc)
+                    password = decrypt_value(node.password_enc) if node.password_enc else ""
+                    auth = f"{username}:{password}@" if password else f"{username}@"
+                proxy_url = f"{node.proxy_type}://{auth}{node.host}:{node.port}"
                 return ProxyRoute(proxy_url=proxy_url, chain=chain)
         return None
 

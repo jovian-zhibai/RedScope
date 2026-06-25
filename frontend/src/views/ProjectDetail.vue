@@ -12,8 +12,9 @@
         </div>
       </div>
       <div style="display: flex; gap: 8px;">
+        <el-button size="small" @click="saveAsTemplate">保存为模板</el-button>
         <el-button size="small" @click="cloneProject" :loading="cloning">克隆项目</el-button>
-        <el-button type="danger" plain @click="emergencyStop">🔴 紧急停止</el-button>
+        <el-button type="danger" plain @click="emergencyStop">紧急停止</el-button>
       </div>
     </div>
 
@@ -57,10 +58,20 @@
         <div style="display: flex; gap: 8px; margin-bottom: 16px;">
           <el-button type="primary" size="small" @click="generateReport" :loading="generating">生成渗透测试报告</el-button>
           <el-button size="small" @click="aiReportSummary" :loading="aiSummarizing">AI 生成总结</el-button>
+          <el-button size="small" type="warning" @click="aiRepairRoadmap" :loading="roadmapping">AI 修复路线图</el-button>
+          <el-button size="small" @click="aiBuildAttackChain" :loading="buildingChain">AI 攻击链推导</el-button>
         </div>
         <div v-if="aiSummary" class="card" style="padding: 16px; margin-bottom: 16px; border-left: 4px solid var(--rs-accent);">
           <h4 style="margin-bottom: 8px;">AI 报告总结</h4>
           <div style="white-space: pre-wrap; font-size: 13px;">{{ aiSummary }}</div>
+        </div>
+        <div v-if="repairRoadmap" class="card" style="padding: 16px; margin-bottom: 16px; border-left: 4px solid var(--rs-warning);">
+          <h4 style="margin-bottom: 8px;">修复路线图</h4>
+          <div style="white-space: pre-wrap; font-size: 13px;">{{ repairRoadmap }}</div>
+        </div>
+        <div v-if="attackChainText" class="card" style="padding: 16px; margin-bottom: 16px; border-left: 4px solid var(--rs-danger);">
+          <h4 style="margin-bottom: 8px;">攻击链推导</h4>
+          <div style="white-space: pre-wrap; font-size: 13px;">{{ attackChainText }}</div>
         </div>
         <el-table :data="reports" style="width: 100%;">
           <el-table-column prop="title" label="报告名称" min-width="200" />
@@ -69,6 +80,76 @@
           <el-table-column prop="generated_at" label="生成时间" width="180"><template #default="{ row }">{{ row.generated_at || '生成中...' }}</template></el-table-column>
         </el-table>
         <el-empty v-if="!reports.length" description="暂无报告" />
+      </el-tab-pane>
+
+      <el-tab-pane label="工作Session" name="sessions">
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+          <el-button type="primary" size="small" @click="startSession" :loading="startingSession">开始新 Session</el-button>
+          <el-button v-if="activeSessionId" type="warning" size="small" @click="endSession" :loading="endingSession">结束当前 Session</el-button>
+          <span v-if="activeSessionId" style="color: var(--rs-success); font-size: 13px; line-height: 32px;">● 工作中</span>
+        </div>
+        <el-table :data="sessions" style="width: 100%;">
+          <el-table-column prop="title" label="标题" min-width="200" />
+          <el-table-column prop="status" label="状态" width="80">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">{{ row.status === 'active' ? '进行中' : '已结束' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="scans_run" label="扫描" width="60" />
+          <el-table-column prop="findings_added" label="漏洞" width="60" />
+          <el-table-column prop="screenshots_count" label="截图" width="60" />
+          <el-table-column prop="started_at" label="开始" width="140"><template #default="{ row }">{{ row.started_at?.replace('T', ' ').slice(0, 16) }}</template></el-table-column>
+          <el-table-column prop="summary" label="摘要" min-width="250">
+            <template #default="{ row }"><span style="font-size: 12px; color: var(--rs-text-secondary);">{{ row.summary?.slice(0, 100) }}</span></template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!sessions.length" description="暂无工作记录" />
+
+        <!-- Screenshot upload -->
+        <div v-if="activeSessionId" style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px;">上传截图</h4>
+          <el-upload
+            :action="`/api/v1/projects/${project.id}/screenshots?session_id=${activeSessionId}`"
+            :headers="uploadHeaders"
+            :on-success="onScreenshotUploaded"
+            :show-file-list="false"
+            accept=".png,.jpg,.jpeg,.gif,.bmp,.webp"
+            drag
+            style="width: 100%;"
+          >
+            <div style="padding: 20px; text-align: center; color: var(--rs-text-secondary);">
+              拖拽截图到此处 或 <em>点击上传</em>
+            </div>
+          </el-upload>
+        </div>
+
+        <!-- Screenshots list -->
+        <div v-if="screenshots.length" style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px;">截图 ({{ screenshots.length }})</h4>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <div v-for="s in screenshots" :key="s.id" class="card" style="width: 150px; padding: 8px; cursor: pointer;" @click="previewScreenshot(s)">
+              <img :src="s.view_url" style="width: 100%; border-radius: 4px;" />
+              <div style="font-size: 11px; color: var(--rs-text-secondary); margin-top: 4px;">{{ s.caption || s.filename }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recordings -->
+        <div style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px;">终端录制 / Playbook</h4>
+          <el-table :data="recordings" style="width: 100%;" size="small">
+            <el-table-column prop="title" label="标题" min-width="150" />
+            <el-table-column prop="commands_count" label="命令数" width="80" />
+            <el-table-column prop="duration_seconds" label="时长(秒)" width="80" />
+            <el-table-column prop="is_playbook" label="Playbook" width="80">
+              <template #default="{ row }">{{ row.is_playbook ? '✅' : '' }}</template>
+            </el-table-column>
+            <el-table-column prop="recorded_at" label="时间" width="140">
+              <template #default="{ row }">{{ row.recorded_at?.replace('T', ' ').slice(0, 16) }}</template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="!recordings.length" description="暂无录制" :image-size="40" />
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="作战管理" name="operations">
@@ -166,6 +247,16 @@ const heatmapData = ref(null)
 const aiSummarizing = ref(false)
 const aiSummary = ref('')
 const cloning = ref(false)
+const roadmapping = ref(false)
+const repairRoadmap = ref('')
+const buildingChain = ref(false)
+const attackChainText = ref('')
+const sessions = ref([])
+const activeSessionId = ref(null)
+const startingSession = ref(false)
+const endingSession = ref(false)
+const screenshots = ref([])
+const recordings = ref([])
 
 const showPipeline = ref(false)
 const pipelines = ref([])
@@ -178,6 +269,14 @@ const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token')}`
 onMounted(async () => {
   project.value = await api.get(`/projects/${pid}`)
   try { const res = await api.get(`/projects/${pid}/reports`); reports.value = res.items || [] } catch(e) {}
+  try {
+    const res = await api.get(`/projects/${pid}/sessions`)
+    sessions.value = res.items || []
+    const active = sessions.value.find(s => s.status === 'active')
+    if (active) activeSessionId.value = active.id
+  } catch(e) {}
+  try { const res = await api.get(`/projects/${pid}/screenshots`); screenshots.value = res.items || [] } catch(e) {}
+  try { const res = await api.get(`/projects/${pid}/recordings`); recordings.value = res.items || [] } catch(e) {}
 })
 
 const emergencyStop = async () => {
@@ -272,5 +371,62 @@ const cloneProject = async () => {
     router.push(`/projects/${res.id}`)
   } catch (e) { ElMessage.error('克隆失败') }
   finally { cloning.value = false }
+}
+
+const saveAsTemplate = async () => {
+  try {
+    const res = await api.post(`/templates/from-project/${pid}`, { name: `${project.value.name} 模板` })
+    ElMessage.success(`已保存为模板: ${res.name}`)
+  } catch (e) { ElMessage.error('保存失败') }
+}
+
+const aiRepairRoadmap = async () => {
+  roadmapping.value = true
+  try {
+    const res = await api.post(`/projects/${pid}/ai/repair-roadmap`)
+    repairRoadmap.value = res.roadmap
+  } catch (e) { ElMessage.error('生成失败') }
+  finally { roadmapping.value = false }
+}
+
+const aiBuildAttackChain = async () => {
+  buildingChain.value = true
+  try {
+    const res = await api.post(`/projects/${pid}/ai/build-attack-chain`)
+    attackChainText.value = res.attack_path
+    ElMessage.success('攻击链已生成并保存')
+  } catch (e) { ElMessage.error('推导失败') }
+  finally { buildingChain.value = false }
+}
+
+const startSession = async () => {
+  startingSession.value = true
+  try {
+    const res = await api.post(`/projects/${pid}/sessions/start`, { title: '' })
+    activeSessionId.value = res.id
+    ElMessage.success('工作 Session 已开始')
+    const sr = await api.get(`/projects/${pid}/sessions`); sessions.value = sr.items || []
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '启动失败') }
+  finally { startingSession.value = false }
+}
+
+const endSession = async () => {
+  endingSession.value = true
+  try {
+    const res = await api.post(`/projects/${pid}/sessions/${activeSessionId.value}/end`)
+    activeSessionId.value = null
+    ElMessage.success('Session 已结束')
+    const sr = await api.get(`/projects/${pid}/sessions`); sessions.value = sr.items || []
+  } catch (e) { ElMessage.error('结束失败') }
+  finally { endingSession.value = false }
+}
+
+const onScreenshotUploaded = async (res) => {
+  ElMessage.success('截图已上传')
+  try { const r = await api.get(`/projects/${pid}/screenshots`); screenshots.value = r.items || [] } catch {}
+}
+
+const previewScreenshot = (s) => {
+  window.open(s.view_url, '_blank')
 }
 </script>

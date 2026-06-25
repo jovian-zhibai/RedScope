@@ -1,7 +1,7 @@
 """Workflow API: work order creation, approval, and lifecycle."""
 
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,8 +63,8 @@ async def list_orders(
 
 
 @router.post("")
-async def create_order(req: OrderCreate, db: AsyncSession = Depends(get_db)):
-    order = WorkOrder(**req.model_dump())
+async def create_order(req: OrderCreate, request: Request, db: AsyncSession = Depends(get_db)):
+    order = WorkOrder(**req.model_dump(), created_by=request.state.user_id)
     db.add(order)
     await db.flush()
     return {"id": order.id, "status": "pending"}
@@ -128,13 +128,14 @@ async def transition_order(order_id: int, req: StatusTransition, _=Depends(requi
 
 
 @router.post("/{order_id}/comments")
-async def add_comment(order_id: int, req: dict, db: AsyncSession = Depends(get_db)):
+async def add_comment(order_id: int, req: dict, request: Request, db: AsyncSession = Depends(get_db)):
     order = await db.get(WorkOrder, order_id)
     if not order:
         raise HTTPException(404, "工单不存在")
 
     comment = WorkOrderComment(
         order_id=order_id,
+        user_id=request.state.user_id,
         content=req.get("content", ""),
     )
     db.add(comment)

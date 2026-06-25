@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from backend.config import get_settings
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api import (
     auth, projects, scope, assets, scanning, findings, knowledge, plugins,
     reports, operational, terminal, manual_testing, baseline,
-    tenants, client_portal, redblue, workflow, wiring,
+    tenants, client_portal, redblue, workflow, wiring, sessions,
 )
 
 
@@ -76,6 +76,7 @@ app.include_router(client_portal.router, prefix="/api/v1/portal", tags=["客户�
 app.include_router(redblue.router, prefix="/api/v1/projects/{project_id}/redblue", tags=["红蓝对抗"])
 app.include_router(workflow.router, prefix="/api/v1/workflow", tags=["工单审批"])
 app.include_router(wiring.router, prefix="/api/v1", tags=["核心能力"])
+app.include_router(sessions.router, prefix="/api/v1", tags=["工作Session"])
 
 
 @app.get("/api/v1/health")
@@ -106,8 +107,7 @@ async def health_check():
 
 @app.get("/api/v1/search")
 @app.get("/api/search")
-async def global_search(q: str = "", db: AsyncSession = Depends(get_db)):
-    """Global search across projects, assets, findings, and knowledge base."""
+async def global_search(q: str = "", request: Request = None, db: AsyncSession = Depends(get_db)):
     from backend.models.project import Project
     from backend.models.asset import Asset
     from backend.models.finding import Finding
@@ -117,16 +117,31 @@ async def global_search(q: str = "", db: AsyncSession = Depends(get_db)):
         return {"projects": [], "assets": [], "findings": [], "knowledge": []}
 
     pattern = f"%{q}%"
+    is_admin = getattr(request.state, 'role', '') == 'admin' if request else False
+    user_id = getattr(request.state, 'user_id', 0) if request else 0
 
-    projects = await db.execute(
-        select(Project).where(Project.name.ilike(pattern) | Project.client_name.ilike(pattern)).limit(5)
-    )
-    assets_result = await db.execute(
-        select(Asset).where(Asset.host.ilike(pattern) | Asset.application.ilike(pattern)).limit(5)
-    )
-    findings_result = await db.execute(
-        select(Finding).where(Finding.title.ilike(pattern)).limit(5)
-    )
+    proj_query = select(Project).where(Project.name.ilike(pattern) | Project.client_name.ilike(pattern))
+    if not is_admin:
+        proj_query = proj_query.where(Project.created_by == user_id)
+    proj_result = await db.execute(proj_query.limit(5))
+    proj_rows = proj_result.scalars().all()
+    project_ids = [p.id for p in proj_rows]
+    projects_list = [{"id": p.id, "name": p.name, "type": "project"} for p in proj_rows]
+
+    asset_query = select(Asset).where(Asset.host.ilike(pattern) | Asset.application.ilike(pattern))
+    if not is_admin and project_ids:
+        asset_query = asset_query.where(Asset.project_id.in_(project_ids))
+    elif not is_admin:
+        asset_query = asset_query.where(Asset.project_id == -1)
+    assets_result = await db.execute(asset_query.limit(5))
+
+    finding_query = select(Finding).where(Finding.title.ilike(pattern))
+    if not is_admin and project_ids:
+        finding_query = finding_query.where(Finding.project_id.in_(project_ids))
+    elif not is_admin:
+        finding_query = finding_query.where(Finding.project_id == -1)
+    findings_result = await db.execute(finding_query.limit(5))
+
     knowledge_result = await db.execute(
         select(VulnKnowledge).where(
             VulnKnowledge.title.ilike(pattern) | VulnKnowledge.cve_id.ilike(pattern)
@@ -134,7 +149,7 @@ async def global_search(q: str = "", db: AsyncSession = Depends(get_db)):
     )
 
     return {
-        "projects": [{"id": p.id, "name": p.name, "type": "project"} for p in projects.scalars()],
+        "projects": projects_list,
         "assets": [{"id": a.id, "host": a.host, "project_id": a.project_id, "type": "asset"} for a in assets_result.scalars()],
         "findings": [{"id": f.id, "title": f.title, "severity": f.severity, "project_id": f.project_id, "type": "finding"} for f in findings_result.scalars()],
         "knowledge": [{"id": k.id, "title": k.title, "cve_id": k.cve_id, "type": "knowledge"} for k in knowledge_result.scalars()],

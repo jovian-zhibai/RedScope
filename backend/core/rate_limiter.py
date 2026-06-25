@@ -26,8 +26,9 @@ async def rate_limit_middleware(request: Request, call_next):
     client_ip = request.client.host if request.client else "unknown"
 
     # Auth endpoints: strict rate limiting
-    if path in ("/api/auth/login", "/api/auth/register", "/api/portal/login"):
-        limiter.check(f"auth:{client_ip}", max_requests=10, window_seconds=60)
+    if path in ("/api/auth/login", "/api/auth/register", "/api/portal/login",
+                 "/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/portal/login"):
+        limiter.check(f"auth:{client_ip}", max_requests=5, window_seconds=60)
 
     # Scan creation: moderate limiting
     if path.endswith("/scans") and request.method == "POST":

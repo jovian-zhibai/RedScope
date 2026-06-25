@@ -30,8 +30,8 @@ class ClientAccountCreate(BaseModel):
     project_id: int
 
 
-def _verify_client_project(request: Request, project_id: int):
-    """Verify the client token's project_id matches the requested project_id."""
+async def _verify_client_project(request: Request, project_id: int, db=None):
+    """Verify the client token's project_id matches and account is active."""
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         raise HTTPException(401, "未登录")
@@ -44,6 +44,7 @@ def _verify_client_project(request: Request, project_id: int):
 
     token_type = payload.get("type")
     token_project_id = payload.get("project_id")
+    account_id = int(payload.get("sub", 0))
 
     if token_type != "client":
         raise HTTPException(403, "非客户账号无权访问客户门户")
@@ -51,9 +52,16 @@ def _verify_client_project(request: Request, project_id: int):
     if token_project_id != project_id:
         raise HTTPException(403, "无权访问该项目")
 
+    if db:
+        account = await db.get(ClientAccount, account_id)
+        if not account or not account.is_active:
+            raise HTTPException(403, "账号已被禁用")
+
 
 @router.post("/accounts")
-async def create_client_account(req: ClientAccountCreate, db: AsyncSession = Depends(get_db)):
+async def create_client_account(req: ClientAccountCreate, request: Request, db: AsyncSession = Depends(get_db)):
+    if not hasattr(request.state, 'role') or request.state.role not in ("admin", "leader"):
+        raise HTTPException(403, "仅管理员/组长可创建客户账号")
     existing = await db.execute(select(ClientAccount).where(ClientAccount.username == req.username))
     if existing.scalar_one_or_none():
         raise HTTPException(400, "客户账号已存在")
@@ -85,7 +93,7 @@ async def client_login(req: ClientLogin, db: AsyncSession = Depends(get_db)):
 
 @router.get("/project/{project_id}/overview")
 async def client_project_overview(project_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    _verify_client_project(request, project_id)
+    await _verify_client_project(request, project_id, db)
 
     project = await db.get(Project, project_id)
     if not project:
@@ -109,7 +117,7 @@ async def client_project_overview(project_id: int, request: Request, db: AsyncSe
 
 @router.get("/project/{project_id}/findings")
 async def client_findings(project_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    _verify_client_project(request, project_id)
+    await _verify_client_project(request, project_id, db)
 
     result = await db.execute(
         select(Finding).where(Finding.project_id == project_id, Finding.is_false_positive == False)
@@ -127,7 +135,7 @@ async def client_findings(project_id: int, request: Request, db: AsyncSession = 
 
 @router.put("/project/{project_id}/findings/{finding_id}/mark-fixed")
 async def client_mark_fixed(project_id: int, finding_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    _verify_client_project(request, project_id)
+    await _verify_client_project(request, project_id, db)
     finding = await db.get(Finding, finding_id)
     if not finding or finding.project_id != project_id:
         raise HTTPException(404, "漏洞不存在")
@@ -138,7 +146,7 @@ async def client_mark_fixed(project_id: int, finding_id: int, request: Request, 
 
 @router.post("/project/{project_id}/request-retest")
 async def client_request_retest(project_id: int, req: dict, request: Request, db: AsyncSession = Depends(get_db)):
-    _verify_client_project(request, project_id)
+    await _verify_client_project(request, project_id, db)
     finding_ids = req.get("finding_ids", [])
     for fid in finding_ids:
         finding = await db.get(Finding, fid)
@@ -151,7 +159,7 @@ async def client_request_retest(project_id: int, req: dict, request: Request, db
 
 @router.get("/project/{project_id}/reports")
 async def client_reports(project_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    _verify_client_project(request, project_id)
+    await _verify_client_project(request, project_id, db)
     result = await db.execute(select(Report).where(Report.project_id == project_id).order_by(Report.created_at.desc()))
     reports = result.scalars().all()
     return {"items": [

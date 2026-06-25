@@ -11,6 +11,7 @@ const routes = [
   { path: '/projects/:id/testing', name: 'ManualTesting', component: () => import('../views/ManualTesting.vue'), meta: { title: '手工测试' } },
   { path: '/projects/:id/redblue', name: 'RedBlue', component: () => import('../views/RedBlue.vue'), meta: { title: '红蓝对抗' } },
   { path: '/projects/:id/llm-test', name: 'LLMTest', component: () => import('../views/LLMTest.vue'), meta: { title: 'LLM安全测试' } },
+  { path: '/ai', name: 'AIAssistant', component: () => import('../views/AIAssistant.vue'), meta: { title: 'AI 助手' } },
   { path: '/knowledge', name: 'Knowledge', component: () => import('../views/Knowledge.vue'), meta: { title: '漏洞情报' } },
   { path: '/plugins', name: 'Plugins', component: () => import('../views/Plugins.vue'), meta: { title: '工具管理' } },
   { path: '/workflow', name: 'Workflow', component: () => import('../views/Workflow.vue'), meta: { title: '工单管理' } },

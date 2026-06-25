@@ -34,7 +34,7 @@ class ProjectUpdate(BaseModel):
 
 
 @router.get("")
-async def list_projects(status: str | None = None, db: AsyncSession = Depends(get_db)):
+async def list_projects(status: str | None = None, request: Request = None, db: AsyncSession = Depends(get_db)):
     from sqlalchemy.orm import selectinload
 
     query = select(
@@ -47,6 +47,15 @@ async def list_projects(status: str | None = None, db: AsyncSession = Depends(ge
 
     if status:
         query = query.where(Project.status == status)
+
+    # Tenant isolation: non-admin users only see projects in their tenant or created by them
+    if request and hasattr(request.state, 'role') and request.state.role != 'admin':
+        tenant_id = getattr(request.state, 'tenant_id', None)
+        user_id = getattr(request.state, 'user_id', 0)
+        if tenant_id:
+            query = query.where((Project.tenant_id == tenant_id) | (Project.created_by == user_id))
+        else:
+            query = query.where(Project.created_by == user_id)
 
     result = await db.execute(query)
     rows = result.all()
@@ -78,6 +87,7 @@ async def create_project(req: ProjectCreate, request: Request, db: AsyncSession 
         max_concurrency=req.max_concurrency,
         sensitive_data_policy=req.sensitive_data_policy,
         created_by=request.state.user_id,
+        tenant_id=getattr(request.state, 'tenant_id', None),
     )
     if req.auth_start_date:
         project.auth_start_date = date.fromisoformat(req.auth_start_date)

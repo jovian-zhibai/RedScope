@@ -90,6 +90,29 @@
           <el-button size="small" :type="detailFinding.fix_status === 'fixed' ? 'success' : ''" @click="updateStatus(detailFinding.id, 'fixed')">已修复</el-button>
           <el-button size="small" :type="detailFinding.fix_status === 'fixing' ? 'warning' : ''" @click="updateStatus(detailFinding.id, 'fixing')">修复中</el-button>
           <el-button size="small" :type="detailFinding.fix_status === 'unfixed' ? 'danger' : ''" @click="updateStatus(detailFinding.id, 'unfixed')">未修复</el-button>
+          <el-button size="small" type="info" @click="showRiskAccept = true">客户接受风险</el-button>
+        </div>
+
+        <!-- Risk Acceptance -->
+        <div v-if="detailFinding.fix_status === 'accepted'" style="margin-top: 12px; padding: 10px; background: var(--rs-bg-secondary); border-radius: 6px; border-left: 3px solid var(--rs-warning);">
+          <div style="font-size: 13px; color: var(--rs-warning);">客户已接受该风险</div>
+        </div>
+
+        <!-- Screenshots for this finding -->
+        <div style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px; color: var(--rs-text-primary);">截图证据</h4>
+          <el-upload
+            :action="`/api/v1/projects/${pid}/screenshots?finding_id=${detailFinding.id}`"
+            :headers="uploadHeaders"
+            :on-success="onFindingScreenshot"
+            :show-file-list="false"
+            accept=".png,.jpg,.jpeg,.gif"
+          >
+            <el-button size="small">上传截图</el-button>
+          </el-upload>
+          <div v-if="findingScreenshots.length" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+            <img v-for="s in findingScreenshots" :key="s.id" :src="s.view_url" style="width: 120px; border-radius: 4px; cursor: pointer;" @click="window.open(s.view_url, '_blank')" />
+          </div>
         </div>
 
         <div v-if="detailFinding.evidence" style="margin-top: 16px;">
@@ -98,6 +121,19 @@
         </div>
       </div>
     </el-drawer>
+
+    <!-- Risk Acceptance Dialog -->
+    <el-dialog v-model="showRiskAccept" title="客户风险接受" width="480px">
+      <el-form :model="riskForm" label-width="80px">
+        <el-form-item label="客户名称"><el-input v-model="riskForm.client_name" /></el-form-item>
+        <el-form-item label="接受人"><el-input v-model="riskForm.accepted_by" placeholder="客户方负责人" /></el-form-item>
+        <el-form-item label="接受原因"><el-input v-model="riskForm.reason" type="textarea" :rows="3" placeholder="客户不修复的理由" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showRiskAccept = false">取消</el-button>
+        <el-button type="warning" @click="acceptRisk">确认接受风险</el-button>
+      </template>
+    </el-dialog>
 
     <!-- Add Finding Dialog -->
     <el-dialog v-model="showAdd" title="手动录入漏洞" width="560px">
@@ -139,6 +175,10 @@ const selectedIds = ref([])
 const filterSev = ref('')
 const filterStatus = ref('')
 const form = ref({ title: '', vuln_type: 'sqli', severity: 'high', description: '', detail: '', solution: '' })
+const showRiskAccept = ref(false)
+const riskForm = ref({ client_name: '', accepted_by: '', reason: '' })
+const findingScreenshots = ref([])
+const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token')}` }
 
 const filteredFindings = computed(() => {
   let list = findings.value
@@ -171,6 +211,29 @@ const addFinding = async () => {
 const openDetail = (row) => {
   detailFinding.value = row
   showDetail.value = true
+  loadFindingScreenshots(row.id)
+}
+
+const loadFindingScreenshots = async (findingId) => {
+  try { const res = await api.get(`/projects/${pid}/screenshots`, { params: { finding_id: findingId } }); findingScreenshots.value = res.items || [] }
+  catch { findingScreenshots.value = [] }
+}
+
+const onFindingScreenshot = () => {
+  ElMessage.success('截图已上传')
+  if (detailFinding.value) loadFindingScreenshots(detailFinding.value.id)
+}
+
+const acceptRisk = async () => {
+  if (!detailFinding.value) return
+  try {
+    await api.post(`/projects/${pid}/findings/${detailFinding.value.id}/accept-risk`, riskForm.value)
+    ElMessage.success('风险已接受')
+    showRiskAccept.value = false
+    detailFinding.value.fix_status = 'accepted'
+    riskForm.value = { client_name: '', accepted_by: '', reason: '' }
+    await load()
+  } catch (e) { ElMessage.error('操作失败') }
 }
 
 const onSelect = (rows) => { selectedIds.value = rows.map(r => r.id) }

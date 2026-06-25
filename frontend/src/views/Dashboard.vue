@@ -190,7 +190,7 @@ onMounted(async () => {
     stats.value.pluginCount = (res.items || []).length
   }).catch(() => {}))
 
-  tasks.push(api.get('/workflow/orders', { params: { status: 'pending' } }).then(res => {
+  tasks.push(api.get('/workflow', { params: { status: 'pending' } }).then(res => {
     stats.value.pendingOrders = (res.items || []).length
   }).catch(() => {}))
 

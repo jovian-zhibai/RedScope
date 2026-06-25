@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from backend.database import get_db
 from backend.core.plugin_manager import plugin_manager
 from backend.core.rbac import require_manager
+from backend.models.scan_task import Plugin
 
 router = APIRouter()
 
@@ -36,3 +40,14 @@ async def reload_plugins(_=Depends(require_manager)):
     plugin_manager.load_all()
     count = len(plugin_manager.list_plugins())
     return {"status": "reloaded", "count": count}
+
+
+@router.put("/{plugin_id}/toggle")
+async def toggle_plugin(plugin_id: str, _=Depends(require_manager), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Plugin).where((Plugin.id == int(plugin_id) if plugin_id.isdigit() else False) | (Plugin.name == plugin_id)))
+    plugin = result.scalar_one_or_none()
+    if not plugin:
+        raise HTTPException(404, "插件不存在")
+    plugin.is_enabled = not plugin.is_enabled
+    await db.flush()
+    return {"name": plugin.name, "is_enabled": plugin.is_enabled}

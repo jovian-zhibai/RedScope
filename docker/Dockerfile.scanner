@@ -11,8 +11,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY scan-runner/main.py /app/main.py
 
-RUN mkdir -p /app/output
+RUN groupadd -r scanner && useradd -r -g scanner -G root scanner
+RUN mkdir -p /app/output && chown -R scanner:scanner /app/output
 
+USER scanner
 EXPOSE 9090
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9090"]

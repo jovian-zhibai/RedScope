@@ -18,6 +18,9 @@ class PipelineExecutor:
         for edge in edges:
             deps[edge["to"]].append(edge["from"])
 
+        if self._has_cycle(nodes, edges):
+            return {"error": "Pipeline DAG contains a cycle"}
+
         completed: dict[str, list[str]] = {}
         results: dict[str, dict] = {}
 
@@ -60,3 +63,27 @@ class PipelineExecutor:
 
         await asyncio.gather(*[run_node(r) for r in roots])
         return results
+
+    @staticmethod
+    def _has_cycle(nodes: dict, edges: list) -> bool:
+        adj = defaultdict(list)
+        for e in edges:
+            adj[e["from"]].append(e["to"])
+        visited = set()
+        in_stack = set()
+
+        def dfs(node):
+            visited.add(node)
+            in_stack.add(node)
+            for neighbor in adj.get(node, []):
+                if neighbor in in_stack:
+                    return True
+                if neighbor not in visited and dfs(neighbor):
+                    return True
+            in_stack.discard(node)
+            return False
+
+        for nid in nodes:
+            if nid not in visited and dfs(nid):
+                return True
+        return False

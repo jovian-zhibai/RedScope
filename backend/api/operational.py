@@ -49,7 +49,17 @@ async def list_proxies(project_id: int, _=Depends(require_project), db: AsyncSes
 @router.post("/proxy")
 async def create_proxy(project_id: int, req: ProxyNodeCreate, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     from backend.utils.crypto import encrypt_value
-    node = ProxyNode(project_id=project_id, **req.model_dump(exclude={"password"}))
+    node = ProxyNode(
+        project_id=project_id,
+        name=req.name,
+        proxy_type=req.proxy_type,
+        host=req.host,
+        port=req.port,
+        reachable_cidrs=req.reachable_cidrs,
+        tunnel_tool=req.tunnel_tool,
+    )
+    if req.username:
+        node.username_enc = encrypt_value(req.username)
     if req.password:
         node.password_enc = encrypt_value(req.password)
     db.add(node)
@@ -68,7 +78,7 @@ async def delete_proxy(project_id: int, node_id: int, _=Depends(require_project)
 
 
 @router.get("/proxy/tunnel-helper")
-async def tunnel_helper(tool: str = "frp", vps_ip: str = "1.2.3.4", vps_port: int = 7000, socks_port: int = 1080):
+async def tunnel_helper(tool: str = "frp", vps_ip: str = "1.2.3.4", vps_port: int = 7000, socks_port: int = 1080, _=Depends(require_project)):
     commands = {
         "frp": {
             "server": f'./frps -c frps.toml\n\n# frps.toml\nbindPort = {vps_port}',

@@ -13,6 +13,9 @@
         <router-link to="/knowledge" class="nav-item" active-class="active">
           <el-icon><Document /></el-icon> 漏洞情报
         </router-link>
+        <router-link to="/ai" class="nav-item" active-class="active">
+          <el-icon><MagicStick /></el-icon> AI 助手
+        </router-link>
         <router-link to="/plugins" class="nav-item" active-class="active">
           <el-icon><SetUp /></el-icon> 工具管理
         </router-link>

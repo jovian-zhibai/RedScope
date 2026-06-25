@@ -5,7 +5,7 @@ import shlex
 
 
 SAFE_TARGET_PATTERN = re.compile(r'^[a-zA-Z0-9\.\-\:\/\[\]\_\%]+$')
-DANGEROUS_CHARS = set(';|&$`(){}!><\n\r')
+DANGEROUS_CHARS = set(';|&$`(){}!><\n\r\\\'\"*?~')
 
 
 def sanitize_target(target: str) -> str:

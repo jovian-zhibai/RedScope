@@ -55,7 +55,7 @@ async def create_tenant(req: TenantCreate, _=Depends(require_admin), db: AsyncSe
 
 
 @router.post("/{tenant_id}/users")
-async def add_user_to_tenant(tenant_id: int, req: TenantAddUser, db: AsyncSession = Depends(get_db)):
+async def add_user_to_tenant(tenant_id: int, req: TenantAddUser, _=Depends(require_admin), db: AsyncSession = Depends(get_db)):
     tenant = await db.get(Tenant, tenant_id)
     if not tenant:
         raise HTTPException(404, "租户不存在")
@@ -71,7 +71,7 @@ async def add_user_to_tenant(tenant_id: int, req: TenantAddUser, db: AsyncSessio
 
 
 @router.get("/{tenant_id}/users")
-async def list_tenant_users(tenant_id: int, db: AsyncSession = Depends(get_db)):
+async def list_tenant_users(tenant_id: int, _=Depends(require_admin), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(TenantUser, User).join(User, TenantUser.user_id == User.id)
         .where(TenantUser.tenant_id == tenant_id)
@@ -85,8 +85,18 @@ async def list_tenant_users(tenant_id: int, db: AsyncSession = Depends(get_db)):
     return {"items": items}
 
 
+@router.delete("/{tenant_id}")
+async def delete_tenant(tenant_id: int, _=Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    tenant = await db.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(404, "租户不存在")
+    tenant.is_active = False
+    await db.flush()
+    return {"status": "disabled"}
+
+
 @router.delete("/{tenant_id}/users/{user_id}")
-async def remove_user_from_tenant(tenant_id: int, user_id: int, db: AsyncSession = Depends(get_db)):
+async def remove_user_from_tenant(tenant_id: int, user_id: int, _=Depends(require_admin), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(TenantUser).where(TenantUser.tenant_id == tenant_id, TenantUser.user_id == user_id)
     )

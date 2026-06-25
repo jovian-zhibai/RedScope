@@ -1,6 +1,6 @@
 """Baseline scanning API: runs compliance checks against target hosts."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
@@ -10,7 +10,7 @@ router = APIRouter()
 
 
 @router.get("/baselines")
-async def list_baselines():
+async def list_baselines(request: Request):
     return {"items": [
         {"key": k, "name": v["name"], "item_count": len(v["items"])}
         for k, v in ALL_BASELINES.items()
@@ -18,10 +18,9 @@ async def list_baselines():
 
 
 @router.get("/baselines/{baseline_key}")
-async def get_baseline_detail(baseline_key: str):
+async def get_baseline_detail(baseline_key: str, request: Request):
     baseline = ALL_BASELINES.get(baseline_key)
     if not baseline:
-        from fastapi import HTTPException
         raise HTTPException(404, "基线不存在")
 
     return {
@@ -51,11 +50,12 @@ class BaselineRunRequest(BaseModel):
     credential_id: int | None = None
 
 
-@router.post("/baselines/run")
-async def run_baseline_check(req: BaselineRunRequest, db: AsyncSession = Depends(get_db)):
-    baseline = ALL_BASELINES.get(req.baseline_key)
+@router.post("/baselines/{baseline_key}/run")
+async def run_baseline_check(baseline_key: str, req: dict = {}, request: Request = None, db: AsyncSession = Depends(get_db)):
+    if request and request.state.role not in ("admin", "leader", "engineer"):
+        raise HTTPException(403, "无权限执行基线扫描")
+    baseline = ALL_BASELINES.get(baseline_key)
     if not baseline:
-        from fastapi import HTTPException
         raise HTTPException(404, "基线不存在")
 
     # In production: SSH to target and execute each check_command
@@ -64,7 +64,7 @@ async def run_baseline_check(req: BaselineRunRequest, db: AsyncSession = Depends
         "status": "manual_mode",
         "message": "请在目标主机上逐项执行以下检查命令，将结果填入平台",
         "baseline": baseline["name"],
-        "target": req.target_host,
+        "target": req.get("target", ""),
         "checks": [
             {
                 "id": item.id,
@@ -86,10 +86,9 @@ class BaselineResultSubmit(BaseModel):
 
 
 @router.post("/baselines/evaluate")
-async def evaluate_baseline_results(req: BaselineResultSubmit):
+async def evaluate_baseline_results(req: BaselineResultSubmit, request: Request):
     baseline = ALL_BASELINES.get(req.baseline_key)
     if not baseline:
-        from fastapi import HTTPException
         raise HTTPException(404, "基线不存在")
 
     item_map = {item.id: item for item in baseline["items"]}

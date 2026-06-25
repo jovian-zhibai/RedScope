@@ -53,7 +53,7 @@ class ProxyNode(Base):
     proxy_type = Column(String(10), nullable=False)
     host = Column(String(256), nullable=False)
     port = Column(Integer, nullable=False)
-    username = Column(String(128))
+    username_enc = Column(String(512))
     password_enc = Column(String(512))
     ssh_key_path = Column(String(512))
     upstream_node_id = Column(Integer, ForeignKey("proxy_nodes.id"))
@@ -206,3 +206,84 @@ class TaskAssignment(Base):
     status = Column(String(20), default="testing")
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
+
+
+class WorkSession(Base):
+    __tablename__ = "work_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(256))
+    status = Column(String(20), default="active")
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    ended_at = Column(DateTime(timezone=True))
+    summary = Column(String(65536))
+    activities = Column(JSONB, default=list)
+    scans_run = Column(Integer, default=0)
+    findings_added = Column(Integer, default=0)
+    notes_count = Column(Integer, default=0)
+    screenshots_count = Column(Integer, default=0)
+
+
+class Screenshot(Base):
+    __tablename__ = "screenshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    session_id = Column(Integer, ForeignKey("work_sessions.id"))
+    finding_id = Column(Integer, ForeignKey("findings.id"))
+    asset_id = Column(Integer, ForeignKey("assets.id"))
+    filename = Column(String(256), nullable=False)
+    file_path = Column(String(1024), nullable=False)
+    file_size = Column(Integer)
+    caption = Column(String(512))
+    is_redacted = Column(Boolean, default=False)
+    uploaded_by = Column(Integer, ForeignKey("users.id"))
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class TerminalRecording(Base):
+    __tablename__ = "terminal_recordings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    session_id = Column(Integer, ForeignKey("work_sessions.id"))
+    title = Column(String(256))
+    commands = Column(JSONB, nullable=False)
+    duration_seconds = Column(Integer)
+    recorded_by = Column(Integer, ForeignKey("users.id"))
+    is_playbook = Column(Boolean, default=False)
+    playbook_name = Column(String(256))
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RiskAcceptance(Base):
+    __tablename__ = "risk_acceptances"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    finding_id = Column(Integer, ForeignKey("findings.id"), nullable=False)
+    client_name = Column(String(256))
+    accepted_by = Column(String(256))
+    reason = Column(String(2048))
+    accepted_at = Column(DateTime(timezone=True), server_default=func.now())
+    pdf_path = Column(String(1024))
+    created_by = Column(Integer, ForeignKey("users.id"))
+
+
+class ProjectTemplate(Base):
+    __tablename__ = "project_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(256), nullable=False)
+    description = Column(String(2048))
+    mode = Column(String(20), nullable=False)
+    scope_rules = Column(JSONB, default=list)
+    engines = Column(JSONB, default=list)
+    pipeline_name = Column(String(256))
+    checklist_ids = Column(JSONB, default=list)
+    scan_intensity = Column(String(20), default="standard")
+    max_concurrency = Column(Integer, default=50)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

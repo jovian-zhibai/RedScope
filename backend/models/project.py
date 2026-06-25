@@ -14,6 +14,7 @@ class Project(Base):
     status = Column(String(20), default="active")  # active / paused / completed / archived
     team_id = Column(Integer, ForeignKey("teams.id"))
     created_by = Column(Integer, ForeignKey("users.id"))
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
     # Authorization (required in combat mode)
     auth_doc_path = Column(String(512))
     auth_start_date = Column(Date)

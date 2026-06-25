@@ -194,8 +194,8 @@ const loadChecklistDetail = async (id) => {
 
 const markResult = async (row, result) => {
   row.result = result
-  await api.post(`/testing/checklists/${selectedChecklist.value}/results`, {
-    project_id: parseInt(pid), item_index: row.index, result,
+  await api.post(`/testing/checklists/${selectedChecklist.value}/results?project_id=${pid}`, {
+    item_index: row.index, result,
   })
 }
 
@@ -238,7 +238,7 @@ const loadNotes = async () => {
 }
 
 const createNote = async () => {
-  await api.post('/testing/notes', { project_id: parseInt(pid), content: newNote.value })
+  await api.post(`/testing/notes?project_id=${pid}`, { content: newNote.value })
   newNote.value = ''
   await loadNotes()
 }
@@ -254,7 +254,7 @@ const loadAssignments = async () => {
 }
 
 const createAssignment = async () => {
-  await api.post('/testing/assignments', { project_id: parseInt(pid), ...assignForm.value })
+  await api.post(`/testing/assignments?project_id=${pid}`, assignForm.value)
   showAssignForm.value = false
   assignForm.value = { module_name: '', assigned_to: '' }
   await loadAssignments()

@@ -1,6 +1,6 @@
 """Manual testing: checklists, payloads, test notes, and task collaboration."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,7 +78,9 @@ async def list_checklists(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/checklists/init-builtin")
-async def init_builtin_checklists(db: AsyncSession = Depends(get_db)):
+async def init_builtin_checklists(request: Request, db: AsyncSession = Depends(get_db)):
+    if request.state.role not in ("admin", "leader"):
+        raise HTTPException(403, "仅管理员/组长可初始化")
     count = 0
     for cl in BUILTIN_CHECKLISTS:
         existing = await db.execute(select(Checklist).where(Checklist.name == cl["name"]))
@@ -158,18 +160,20 @@ async def list_payloads(category: str | None = None, db: AsyncSession = Depends(
 
 
 @router.post("/payloads")
-async def create_payload(req: PayloadCreate, db: AsyncSession = Depends(get_db)):
-    payload = Payload(**req.model_dump())
+async def create_payload(req: PayloadCreate, request: Request, db: AsyncSession = Depends(get_db)):
+    payload = Payload(**req.model_dump(), owner_id=request.state.user_id)
     db.add(payload)
     await db.flush()
     return {"id": payload.id}
 
 
 @router.delete("/payloads/{payload_id}")
-async def delete_payload(payload_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_payload(payload_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     payload = await db.get(Payload, payload_id)
     if not payload:
         raise HTTPException(404, "Payload不存在")
+    if payload.owner_id and payload.owner_id != request.state.user_id and request.state.role != "admin":
+        raise HTTPException(403, "只能删除自己的 Payload")
     await db.delete(payload)
     await db.flush()
     return {"status": "deleted"}
@@ -233,11 +237,13 @@ async def create_assignment(project_id: int, req: dict, _=Depends(require_projec
 
 
 @router.put("/assignments/{assignment_id}/complete")
-async def complete_assignment(assignment_id: int, db: AsyncSession = Depends(get_db)):
+async def complete_assignment(assignment_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     from datetime import datetime
     a = await db.get(TaskAssignment, assignment_id)
     if not a:
         raise HTTPException(404, "任务不存在")
+    if a.assigned_to and a.assigned_to != request.state.user_id and request.state.role != "admin":
+        raise HTTPException(403, "只能完成分配给自己的任务")
     a.status = "completed"
     a.completed_at = datetime.now()
     await db.flush()

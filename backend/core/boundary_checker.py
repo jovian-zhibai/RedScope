@@ -23,6 +23,8 @@ class BoundaryChecker:
 
     def check_target(self, target: str, port: int | None = None) -> BoundaryCheckResult:
         if self.project.mode == "research":
+            if self._is_public_ip(target):
+                return BoundaryCheckResult(False, f"研究模式禁止扫描公网 IP: {target}。如需测试公网目标，请切换到实战模式并配置授权。")
             return BoundaryCheckResult(True)
 
         if self.project.mode == "range":

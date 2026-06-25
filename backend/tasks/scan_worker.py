@@ -32,6 +32,14 @@ def _import_parser(parser_path: str):
 
 @celery_app.task(bind=True, name="run_scan_task")
 def run_scan_task(self, scan_task_id: int):
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(_run_scan_task_async(self, scan_task_id))
+    finally:
+        loop.close()
+
+
+async def _run_scan_task_async(task_self, scan_task_id: int):
     with SyncSession() as db:
         task = db.get(ScanTask, scan_task_id)
         if not task:
@@ -81,18 +89,21 @@ def run_scan_task(self, scan_task_id: int):
                         proxy_url = route.proxy_url
 
                     params = {"target": target, "url": target, "domain": target}
-                    result = asyncio.run(
-                        orchestrator.run_engine(plugin, params, proxy_url=proxy_url, task_id=f"{task.id}_{engine_name}_{i}")
-                    )
+                    result = await orchestrator.run_engine(plugin, params, proxy_url=proxy_url, task_id=f"{task.id}_{engine_name}_{i}")
 
                     if result.success and result.output_path:
                         findings = _parse_results(db, plugin, result.output_path, task.project_id)
                         total_vulns += len(findings)
 
+                        # Instant notification for critical findings
+                        critical_findings = [f for f in findings if f.severity == "critical"]
+                        if critical_findings:
+                            await _notify_critical_instant(critical_findings, task.task_name or f"扫描#{task.id}")
+
                     task.scanned_count = i + 1
                     task.progress = int((i + 1) / len(targets) * 100)
                     db.commit()
-                    self.update_state(state="PROGRESS", meta={"progress": task.progress})
+                    task_self.update_state(state="PROGRESS", meta={"progress": task.progress})
 
                 engine_run.status = "completed"
                 engine_run.vulns_found = total_vulns
@@ -105,7 +116,10 @@ def run_scan_task(self, scan_task_id: int):
 
             db.commit()
 
-        task.status = "completed"
+        failed_run = db.execute(
+            select(EngineRun).where(EngineRun.scan_task_id == task.id, EngineRun.status == "failed")
+        ).scalars().first()
+        task.status = "failed" if failed_run and total_vulns == 0 else "completed"
         task.vulns_found = total_vulns
         task.finished_at = datetime.now()
         db.commit()
@@ -114,8 +128,9 @@ def run_scan_task(self, scan_task_id: int):
         try:
             from backend.core.dedup import dedup_findings
             dedup_findings(db, task.project_id)
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("scan_worker").error(f"Dedup failed for project {task.project_id}: {e}")
 
         try:
             from backend.core.risk_scorer import compute_risk_score
@@ -138,16 +153,28 @@ def run_scan_task(self, scan_task_id: int):
             from backend.config import get_settings as _get_settings
             _settings = _get_settings()
             if _settings.notify_webhook_url:
-                import asyncio as _asyncio
                 from backend.core.notify import notify_scan_complete
-                _asyncio.run(notify_scan_complete(
+                await notify_scan_complete(
                     _settings.notify_webhook_url, _settings.notify_channel,
                     task.task_name or f"扫描任务#{task.id}", total_vulns,
-                ))
+                )
         except Exception:
             pass
 
     return {"task_id": scan_task_id, "vulns_found": total_vulns}
+
+
+async def _notify_critical_instant(findings, task_name: str):
+    try:
+        _settings = get_settings()
+        if not _settings.notify_webhook_url:
+            return
+        titles = ", ".join(f.title[:50] for f in findings[:3])
+        message = f"🚨 紧急: 扫描「{task_name}」发现 {len(findings)} 个严重漏洞!\n{titles}"
+        from backend.core.notify import send_webhook
+        await send_webhook(_settings.notify_channel, _settings.notify_webhook_url, "RedScope 严重漏洞告警", message)
+    except Exception:
+        pass
 
 
 def _parse_results(db: Session, plugin: PluginConfig, output_dir: str, project_id: int) -> list:

@@ -46,7 +46,7 @@ class TerminalSession:
             os.dup2(fd, 0)
             os.dup2(fd, 1)
             os.dup2(fd, 2)
-            os.execvp("/bin/bash", ["/bin/bash", "--restricted", "-l"])
+            os.execvp("/bin/bash", ["/bin/bash", "--restricted", "--norc", "--noprofile"])
         else:
             self.fd = fd
             self.resize(cols, rows)
@@ -97,9 +97,21 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     await websocket.accept()
     logger.info(f"Terminal opened: user={user['username']} session={session_id}")
 
+    # Namespace session_id by user to prevent cross-user collision
+    namespaced_id = f"u{user_id}_{session_id}"
+
+    # If session already exists, check ownership
+    if namespaced_id in sessions:
+        existing = sessions[namespaced_id]
+        if existing.user_id != user_id:
+            await websocket.close(code=4003, reason="无权访问此终端会话")
+            return
+        existing.stop()
+        sessions.pop(namespaced_id, None)
+
     session = TerminalSession(user_id)
     session.start()
-    sessions[session_id] = session
+    sessions[namespaced_id] = session
     user_session_count[user_id] = current_count + 1
 
     async def read_output():
@@ -130,6 +142,6 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     finally:
         read_task.cancel()
         session.stop()
-        sessions.pop(session_id, None)
+        sessions.pop(namespaced_id, None)
         user_session_count[user_id] = max(0, user_session_count.get(user_id, 1) - 1)
         logger.info(f"Terminal closed: user={user['username']} session={session_id}")

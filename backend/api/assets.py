@@ -75,8 +75,8 @@ async def create_asset(project_id: int, req: AssetCreate, _=Depends(require_proj
 
 @router.get("/stats")
 async def asset_stats(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
-    total = await db.scalar(select(func.count()).where(Asset.project_id == project_id))
-    alive = await db.scalar(select(func.count()).where(Asset.project_id == project_id, Asset.is_alive == True))
+    total = await db.scalar(select(func.count()).where(Asset.project_id == project_id, Asset.deleted_at == None))
+    alive = await db.scalar(select(func.count()).where(Asset.project_id == project_id, Asset.is_alive == True, Asset.deleted_at == None))
     return {"total": total, "alive": alive, "dead": total - alive}
 
 
@@ -85,8 +85,10 @@ async def update_asset(project_id: int, asset_id: int, req: dict, _=Depends(requ
     asset = await db.get(Asset, asset_id)
     if not asset or asset.project_id != project_id:
         raise HTTPException(404, "资产不存在")
+    UPDATABLE_FIELDS = {"host", "port", "protocol", "url", "os", "server", "framework",
+                        "application", "app_version", "scope_status", "importance", "is_alive", "tags"}
     for field, value in req.items():
-        if hasattr(asset, field):
+        if field in UPDATABLE_FIELDS:
             setattr(asset, field, value)
     await db.flush()
     return {"id": asset.id, "status": "updated"}

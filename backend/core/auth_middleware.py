@@ -27,7 +27,7 @@ async def auth_middleware(request: Request, call_next):
 
     # WebSocket handles its own auth via query param token — skip HTTP middleware
     # but do NOT skip blindly; terminal.py verifies JWT before accepting
-    if request.headers.get("upgrade", "").lower() == "websocket":
+    if request.headers.get("upgrade", "").lower() == "websocket" and path.startswith("/ws/"):
         return await call_next(request)
 
     if path in PUBLIC_PATHS or request.method == "OPTIONS":
@@ -44,6 +44,7 @@ async def auth_middleware(request: Request, call_next):
         request.state.username = payload.get("username", "")
         request.state.role = payload.get("role", "viewer")
         request.state.token_type = payload.get("type", "user")
+        request.state.tenant_id = payload.get("tenant_id")
     except JWTError:
         raise HTTPException(status_code=401, detail="Token无效或已过期，请重新登录")
 
