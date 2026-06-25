@@ -39,16 +39,20 @@ class TerminalSession:
         self.user_id = user_id
 
     def start(self, cols: int = 120, rows: int = 30):
-        pid, fd = pty.openpty()
+        master_fd, slave_fd = pty.openpty()
         self.pid = os.fork()
         if self.pid == 0:
+            os.close(master_fd)
             os.setsid()
-            os.dup2(fd, 0)
-            os.dup2(fd, 1)
-            os.dup2(fd, 2)
-            os.execvp("/bin/bash", ["/bin/bash", "--restricted", "--norc", "--noprofile"])
+            os.dup2(slave_fd, 0)
+            os.dup2(slave_fd, 1)
+            os.dup2(slave_fd, 2)
+            if slave_fd > 2:
+                os.close(slave_fd)
+            os.execvp("/bin/bash", ["/bin/bash", "--norc", "--noprofile"])
         else:
-            self.fd = fd
+            os.close(slave_fd)
+            self.fd = master_fd
             self.resize(cols, rows)
 
     def resize(self, cols: int, rows: int):

@@ -2,9 +2,11 @@
   <div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
       <h2>漏洞情报库</h2>
-      <div style="display: flex; gap: 8px;">
-        <el-button size="small" @click="fetchNVD" :loading="fetchingNVD">抓取 NVD</el-button>
-        <el-button size="small" @click="fetchCNVD" :loading="fetchingCNVD">抓取 CNVD</el-button>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <el-button size="small" @click="fetchNVD" :loading="fetchingNVD">
+          抓取 NVD 漏洞
+        </el-button>
+        <span style="font-size: 11px; color: var(--rs-text-secondary);">需先在 设置→系统配置 中填入 NVD API Key</span>
       </div>
     </div>
     <div style="display: flex; gap: 12px; margin-bottom: 16px;">
@@ -39,7 +41,7 @@ import { ElMessage } from 'element-plus'
 import api from '../stores/api'
 
 const keyword = ref(''); const severity = ref(''); const items = ref([])
-const fetchingNVD = ref(false); const fetchingCNVD = ref(false)
+const fetchingNVD = ref(false)
 const pageSize = ref(20); const currentPage = ref(1)
 
 const pagedItems = computed(() => {
@@ -63,16 +65,6 @@ const fetchNVD = async () => {
     await search()
   } catch (e) { ElMessage.error('NVD 抓取失败') }
   finally { fetchingNVD.value = false }
-}
-
-const fetchCNVD = async () => {
-  fetchingCNVD.value = true
-  try {
-    const res = await api.post('/knowledge/fetch-cnvd')
-    ElMessage.success(`CNVD 抓取完成: 新增 ${res.added || 0} 条`)
-    await search()
-  } catch (e) { ElMessage.error('CNVD 抓取失败') }
-  finally { fetchingCNVD.value = false }
 }
 
 onMounted(search)

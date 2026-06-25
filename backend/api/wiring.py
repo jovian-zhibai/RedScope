@@ -466,6 +466,10 @@ class AIScanRecommendRequest(BaseModel):
 async def ai_chat(req: AIChatRequest, request: Request, db: AsyncSession = Depends(get_db)):
     from backend.ai.assistant import chat_with_assistant
 
+    msg_lower = req.message.lower()
+    if any(kw in msg_lower for kw in ["检查配置", "帮我配置", "配置检查", "check config", "缺什么"]):
+        return {"reply": await _check_system_config(db, req.project_id)}
+
     context = ""
     if req.project_id:
         from backend.models.project import Project
@@ -479,6 +483,68 @@ async def ai_chat(req: AIChatRequest, request: Request, db: AsyncSession = Depen
 
     reply = await chat_with_assistant(req.message, context)
     return {"reply": reply}
+
+
+async def _check_system_config(db, project_id=None):
+    from backend.config import get_settings
+    s = get_settings()
+    issues = []
+    ok = []
+
+    if not s.llm_api_key:
+        issues.append("❌ LLM API Key 未配置 → AI 助手/报告总结/攻击路径推导不可用。请在 设置→系统配置 中填入 API Key")
+    else:
+        ok.append("✅ LLM API 已配置")
+
+    if not s.notify_webhook_url:
+        issues.append("⚠️ 通知 Webhook 未配置 → 扫描完成和严重漏洞不会推送。请在 设置→通知设置 中配置")
+    else:
+        ok.append("✅ 通知 Webhook 已配置")
+
+    if "dev" in s.secret_key.lower():
+        issues.append("❌ 正在使用开发默认密钥！生产环境请设置 SECRET_KEY 环境变量")
+    else:
+        ok.append("✅ SECRET_KEY 已配置")
+
+    if s.environment != "production":
+        issues.append("⚠️ 当前环境: development（非生产模式）")
+
+    try:
+        import redis as redis_lib
+        r = redis_lib.from_url(s.redis_url)
+        r.ping()
+        ok.append("✅ Redis 连接正常")
+    except Exception:
+        issues.append("❌ Redis 连接失败")
+
+    if project_id:
+        from backend.models.asset import Asset
+        from backend.models.finding import Finding
+        asset_count = await db.scalar(select(func.count()).where(Asset.project_id == project_id))
+        finding_count = await db.scalar(select(func.count()).where(Finding.project_id == project_id))
+        if asset_count == 0:
+            issues.append(f"⚠️ 当前项目没有资产 → 请先添加资产或导入 CSV/Nessus")
+        else:
+            ok.append(f"✅ 当前项目有 {asset_count} 个资产")
+        if finding_count > 0:
+            ok.append(f"✅ 当前项目已发现 {finding_count} 个漏洞")
+
+    from backend.core.plugin_manager import plugin_manager
+    plugin_count = len(plugin_manager.list_plugins())
+    if plugin_count == 0:
+        issues.append("❌ 没有加载任何扫描工具 → 请在 工具管理 页面重新加载或添加工具")
+    else:
+        ok.append(f"✅ 已加载 {plugin_count} 个扫描工具")
+
+    result = "📋 系统配置检查报告\n\n"
+    if ok:
+        result += "\n".join(ok) + "\n\n"
+    if issues:
+        result += "需要处理的问题:\n" + "\n".join(issues)
+    else:
+        result += "🎉 所有配置正常，可以开始使用！"
+
+    return result
 
 
 @router.post("/projects/{project_id}/ai/recommend-scan")

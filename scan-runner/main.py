@@ -91,7 +91,8 @@ async def create_job(req: JobRequest, request: Request):
                     cpu_count=req.cpu_count,
                     read_only=True,
                     cap_drop=["ALL"],
-                    tmpfs={"/tmp": ""},
+                    cap_add=["NET_RAW"],
+                    tmpfs={"/tmp": "", "/root/.config": "", "/root/.local": "", "/home": ""},
                     volumes={str(output_dir.resolve()): {"bind": "/output", "mode": "rw"}},
                     auto_remove=False,
                 )

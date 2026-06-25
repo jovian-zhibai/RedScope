@@ -8,7 +8,7 @@ from backend.models.operational import (
     Credential, CompromisedHost, ProxyNode, AttackTimeline,
     CleanupItem, Loot, AuditLog, Report,
     Checklist, ChecklistResult, Payload, TestNote, TaskAssignment,
-    WorkSession, Screenshot, TerminalRecording, RiskAcceptance, ProjectTemplate,
+    WorkSession, Screenshot, TerminalRecording, RiskAcceptance, ProjectTemplate, SystemSetting,
 )
 from backend.models.tenant import Tenant, TenantUser
 from backend.models.redblue import RedBlueExercise, ScoreEntry
@@ -25,7 +25,7 @@ __all__ = [
     "Credential", "CompromisedHost", "ProxyNode", "AttackTimeline",
     "CleanupItem", "Loot", "AuditLog", "Report",
     "Checklist", "ChecklistResult", "Payload", "TestNote", "TaskAssignment",
-    "WorkSession", "Screenshot", "TerminalRecording", "RiskAcceptance", "ProjectTemplate",
+    "WorkSession", "Screenshot", "TerminalRecording", "RiskAcceptance", "ProjectTemplate", "SystemSetting",
     "Tenant", "TenantUser",
     "RedBlueExercise", "ScoreEntry",
     "WorkOrder", "WorkOrderComment",

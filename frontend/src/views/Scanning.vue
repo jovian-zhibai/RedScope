@@ -16,7 +16,7 @@
       <div class="stat-card critical"><div class="stat-label">发现漏洞</div><div class="stat-value">{{ tasks.reduce((a, t) => a + (t.vulns_found || 0), 0) }}</div></div>
     </div>
 
-    <el-table :data="tasks" style="width: 100%;" @row-click="toggleDetail">
+    <el-table :data="tasks" style="width: 100%;" @row-click="openDetail">
       <el-table-column prop="task_name" label="任务名称" min-width="200" />
       <el-table-column prop="scan_strategy" label="策略" width="100">
         <template #default="{ row }">
@@ -56,6 +56,51 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <!-- Scan Detail Drawer -->
+    <el-drawer v-model="showDetail" :title="detailScan?.task_name || '扫描详情'" size="600px">
+      <div v-if="detailScan" style="padding: 0 8px;">
+        <div class="stat-grid" style="margin-bottom: 16px;">
+          <div class="stat-card info"><div class="stat-label">状态</div><div class="stat-value" style="font-size: 16px;">
+            <el-tag :type="{pending:'info',running:'warning',completed:'success',failed:'danger',stopped:'danger'}[detailScan.status]">
+              {{ {pending:'等待中',running:'运行中',completed:'已完成',failed:'失败',stopped:'已停止'}[detailScan.status] }}
+            </el-tag>
+          </div></div>
+          <div class="stat-card warning"><div class="stat-label">进度</div><div class="stat-value" style="font-size: 16px;">{{ detailScan.scanned_count || 0 }} / {{ detailScan.total_targets || 0 }}</div></div>
+          <div class="stat-card critical"><div class="stat-label">发现漏洞</div><div class="stat-value">{{ detailScan.vulns_found || 0 }}</div></div>
+        </div>
+
+        <div v-if="detailScan.progress < 100 && detailScan.status === 'running'" style="margin-bottom: 16px;">
+          <el-progress :percentage="detailScan.progress" :stroke-width="10" />
+        </div>
+
+        <h4 style="margin: 16px 0 8px;">扫描引擎</h4>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;">
+          <el-tag v-for="e in (detailScan.engines || [])" :key="e" size="small">{{ e }}</el-tag>
+          <el-tag v-if="!detailScan.engines?.length" size="small" type="info">自动</el-tag>
+        </div>
+
+        <h4 style="margin: 16px 0 8px;">扫描目标</h4>
+        <div style="max-height: 150px; overflow-y: auto; background: var(--rs-bg-secondary); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px;">
+          <div v-for="t in (detailScan.target_assets || [])" :key="t" style="font-size: 12px; font-family: monospace; padding: 2px 0;">{{ t }}</div>
+          <div v-if="!detailScan.target_assets?.length" style="color: var(--rs-text-secondary); font-size: 12px;">无目标</div>
+        </div>
+
+        <h4 style="margin: 16px 0 8px;">时间</h4>
+        <div style="font-size: 13px; color: var(--rs-text-secondary);">
+          <div>开始: {{ detailScan.started_at?.replace('T', ' ').slice(0, 19) || '未开始' }}</div>
+          <div>结束: {{ detailScan.finished_at?.replace('T', ' ').slice(0, 19) || '进行中' }}</div>
+        </div>
+
+        <div v-if="detailScan.vulns_found > 0" style="margin-top: 16px;">
+          <el-button type="primary" size="small" @click="$router.push(`/projects/${pid}/findings`); showDetail = false">查看发现的漏洞 →</el-button>
+        </div>
+
+        <div v-if="detailScan.status === 'running'" style="margin-top: 16px;">
+          <el-button type="danger" size="small" @click="stopScan(detailScan.id); showDetail = false">停止扫描</el-button>
+        </div>
+      </div>
+    </el-drawer>
 
     <!-- Create Scan Dialog -->
     <el-dialog v-model="showCreate" title="新建扫描任务" width="600px">
@@ -107,6 +152,8 @@ const showCreate = ref(false)
 const creating = ref(false)
 const refreshing = ref(false)
 const availableEngines = ref([])
+const showDetail = ref(false)
+const detailScan = ref(null)
 const form = ref({ task_name: '', scan_strategy: 'standard', engines: [], targetsText: '' })
 
 let pollTimer = null
@@ -164,6 +211,15 @@ const stopScan = async (id) => {
 
 const toggleDetail = (row) => {
   // Future: expand row to show engine runs detail
+}
+
+const openDetail = async (row) => {
+  try {
+    detailScan.value = await api.get(`/projects/${pid}/scans/${row.id}`)
+  } catch {
+    detailScan.value = row
+  }
+  showDetail.value = true
 }
 
 onMounted(async () => {

@@ -97,11 +97,12 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../stores/api'
 
 const router = useRouter()
+const route = useRoute()
 const projects = ref([])
 const showCreate = ref(false)
 const creating = ref(false)
@@ -157,5 +158,6 @@ const createFromTemplate = async () => {
 onMounted(async () => {
   await loadProjects()
   await loadTemplates()
+  if (route.query.action === 'create') showCreate.value = true
 })
 </script>

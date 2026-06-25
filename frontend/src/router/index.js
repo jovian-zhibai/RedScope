@@ -2,6 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   { path: '/', name: 'Dashboard', component: () => import('../views/Dashboard.vue'), meta: { title: '总览' } },
+
+  // 工作台
   { path: '/projects', name: 'Projects', component: () => import('../views/Projects.vue'), meta: { title: '项目管理' } },
   { path: '/projects/:id', name: 'ProjectDetail', component: () => import('../views/ProjectDetail.vue'), meta: { title: '项目详情' } },
   { path: '/projects/:id/assets', name: 'Assets', component: () => import('../views/Assets.vue'), meta: { title: '资产管理' } },
@@ -11,8 +13,20 @@ const routes = [
   { path: '/projects/:id/testing', name: 'ManualTesting', component: () => import('../views/ManualTesting.vue'), meta: { title: '手工测试' } },
   { path: '/projects/:id/redblue', name: 'RedBlue', component: () => import('../views/RedBlue.vue'), meta: { title: '红蓝对抗' } },
   { path: '/projects/:id/llm-test', name: 'LLMTest', component: () => import('../views/LLMTest.vue'), meta: { title: 'LLM安全测试' } },
+
+  // 全局入口（选项目后跳转）
+  { path: '/assets', name: 'AssetsGlobal', component: () => import('../views/AssetsGlobal.vue'), meta: { title: '资产管理' } },
+  { path: '/scans', name: 'ScansGlobal', component: () => import('../views/ScansGlobal.vue'), meta: { title: '扫描任务' } },
+  { path: '/vulns', name: 'VulnsGlobal', component: () => import('../views/VulnsGlobal.vue'), meta: { title: '漏洞管理' } },
+  { path: '/warroom', name: 'WarRoom', component: () => import('../views/WarRoom.vue'), meta: { title: '作战管理' } },
+  { path: '/redblue', name: 'RedBlueGlobal', component: () => import('../views/RedBlueGlobal.vue'), meta: { title: '红蓝对抗' } },
+  { path: '/testing', name: 'TestingGlobal', component: () => import('../views/TestingGlobal.vue'), meta: { title: '手工测试' } },
+
+  // 智能
   { path: '/ai', name: 'AIAssistant', component: () => import('../views/AIAssistant.vue'), meta: { title: 'AI 助手' } },
   { path: '/knowledge', name: 'Knowledge', component: () => import('../views/Knowledge.vue'), meta: { title: '漏洞情报' } },
+
+  // 系统
   { path: '/plugins', name: 'Plugins', component: () => import('../views/Plugins.vue'), meta: { title: '工具管理' } },
   { path: '/workflow', name: 'Workflow', component: () => import('../views/Workflow.vue'), meta: { title: '工单管理' } },
   { path: '/baseline', name: 'Baseline', component: () => import('../views/Baseline.vue'), meta: { title: '基线合规' } },
@@ -21,37 +35,22 @@ const routes = [
   { path: '/settings', name: 'Settings', component: () => import('../views/Settings.vue'), meta: { title: '设置' } },
   { path: '/profile', redirect: '/settings' },
   { path: '/notifications', redirect: '/settings' },
+
+  // 独立页面
   { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { title: '登录', noAuth: true, noLayout: true } },
   { path: '/portal', name: 'ClientPortal', component: () => import('../views/ClientPortal.vue'), meta: { title: '客户门户', noAuth: true, noLayout: true } },
 ]
 
-const router = createRouter({
-  history: createWebHistory(),
-  routes,
-})
+const router = createRouter({ history: createWebHistory(), routes })
 
 router.beforeEach((to, from, next) => {
-  if (to.meta.noAuth) {
-    next()
-    return
-  }
+  if (to.meta.noAuth) { next(); return }
   const token = localStorage.getItem('token')
-  if (!token) {
-    next({ name: 'Login', query: { redirect: to.fullPath } })
-    return
-  }
+  if (!token) { next({ name: 'Login', query: { redirect: to.fullPath } }); return }
   try {
     const payload = JSON.parse(atob(token.split('.')[1]))
-    if (payload.exp && payload.exp * 1000 < Date.now()) {
-      localStorage.removeItem('token')
-      next({ name: 'Login' })
-      return
-    }
-  } catch (e) {
-    localStorage.removeItem('token')
-    next({ name: 'Login' })
-    return
-  }
+    if (payload.exp && payload.exp * 1000 < Date.now()) { localStorage.removeItem('token'); next({ name: 'Login' }); return }
+  } catch { localStorage.removeItem('token'); next({ name: 'Login' }); return }
   next()
 })
 

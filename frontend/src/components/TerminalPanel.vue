@@ -38,7 +38,7 @@ onMounted(() => {
   const token = localStorage.getItem('token')
   ws = new WebSocket(`${wsProtocol}//${location.host}/ws/terminal/${props.sessionId}?token=${token}`)
 
-  ws.onopen = () => terminal.write('\r\n\x1b[32m[RedScope Terminal Connected]\x1b[0m\r\n\r\n')
+  ws.onopen = () => terminal.write('\r\n\x1b[32m[RedScope Terminal]\x1b[0m 已连接到后端容器\r\n\x1b[33m提示: 如需连接宿主机，请使用 ssh user@host.docker.internal\x1b[0m\r\n\r\n')
   ws.onmessage = (e) => terminal.write(e.data)
   ws.onclose = () => terminal.write('\r\n\x1b[31m[Connection Closed]\x1b[0m\r\n')
   terminal.onData((data) => { if (ws.readyState === WebSocket.OPEN) ws.send(data) })

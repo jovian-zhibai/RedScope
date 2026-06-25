@@ -63,30 +63,90 @@
       <el-tab-pane v-if="isAdmin" label="系统配置" name="system">
         <div class="card" style="margin-top: 12px;">
           <h3 style="margin-bottom: 16px;">AI / LLM 配置</h3>
-          <el-form :model="sysConfig" label-width="120px">
-            <el-form-item label="LLM API Key"><el-input v-model="sysConfig.llm_api_key" placeholder="sk-..." type="password" show-password /></el-form-item>
-            <el-form-item label="LLM Base URL"><el-input v-model="sysConfig.llm_base_url" placeholder="https://api.deepseek.com" /></el-form-item>
-            <el-form-item label="LLM Model"><el-input v-model="sysConfig.llm_model" placeholder="deepseek-chat" /></el-form-item>
+          <el-form :model="sysConfig" label-width="140px">
+            <el-form-item label="API Key"><el-input v-model="sysConfig.llm_api_key" placeholder="sk-..." type="password" show-password /></el-form-item>
+            <el-form-item label="API 地址">
+              <el-input v-model="sysConfig.llm_base_url" placeholder="https://api.deepseek.com/v1/chat/completions" />
+              <div style="font-size: 11px; color: var(--rs-text-secondary); margin-top: 4px;">填完整地址（含 /v1/chat/completions）或只填域名均可</div>
+            </el-form-item>
+            <el-form-item label="模型名称"><el-input v-model="sysConfig.llm_model" placeholder="deepseek-chat" /></el-form-item>
+            <el-form-item label="NVD API Key">
+              <el-input v-model="sysConfig.nvd_api_key" placeholder="NVD 漏洞情报抓取用，从 nvd.nist.gov 申请" type="password" show-password />
+            </el-form-item>
+            <el-form-item>
+              <el-button @click="testLLM" :loading="testingLLM">测试连通性</el-button>
+              <el-tag v-if="llmTestResult" :type="llmTestResult.status === 'ok' ? 'success' : 'danger'" style="margin-left: 12px;">
+                {{ llmTestResult.status === 'ok' ? '连接成功' : '失败: ' + llmTestResult.error }}
+              </el-tag>
+            </el-form-item>
           </el-form>
         </div>
+
+        <div class="card">
+          <h3 style="margin-bottom: 16px;">通知配置</h3>
+          <el-form :model="sysConfig" label-width="140px">
+            <el-form-item label="Webhook URL"><el-input v-model="sysConfig.notify_webhook_url" placeholder="https://qyapi.weixin.qq.com/..." /></el-form-item>
+            <el-form-item label="通知渠道">
+              <el-select v-model="sysConfig.notify_channel" style="width: 100%;">
+                <el-option value="wecom" label="企业微信" /><el-option value="dingtalk" label="钉钉" />
+                <el-option value="feishu" label="飞书" /><el-option value="slack" label="Slack" />
+                <el-option value="telegram" label="Telegram" />
+              </el-select>
+            </el-form-item>
+          </el-form>
+        </div>
+
         <div class="card">
           <h3 style="margin-bottom: 16px;">扫描配置</h3>
-          <el-form :model="sysConfig" label-width="120px">
+          <el-form :model="sysConfig" label-width="140px">
             <el-form-item label="最大并发扫描"><el-input-number v-model="sysConfig.max_concurrent_scans" :min="1" :max="50" /></el-form-item>
-            <el-form-item label="单次最大目标"><el-input-number v-model="sysConfig.max_targets_per_scan" :min="1" :max="10000" /></el-form-item>
-            <el-form-item label="CORS Origins"><el-input v-model="sysConfig.cors_origins" placeholder="http://localhost:3000" /></el-form-item>
+            <el-form-item label="单次最大目标数"><el-input-number v-model="sysConfig.max_targets_per_scan" :min="1" :max="10000" /></el-form-item>
           </el-form>
         </div>
+
         <div class="card">
-          <h3 style="margin-bottom: 16px;">运行环境</h3>
-          <el-form label-width="120px">
-            <el-form-item label="环境"><el-tag>{{ sysConfig.environment }}</el-tag></el-form-item>
-            <el-form-item label="通知 Webhook"><span style="font-size: 13px; color: var(--rs-text-secondary);">{{ sysConfig.notify_webhook_url || '未配置' }}</span></el-form-item>
-            <el-form-item label="通知渠道"><el-tag size="small">{{ sysConfig.notify_channel }}</el-tag></el-form-item>
+          <h3 style="margin-bottom: 16px;">网络配置</h3>
+          <el-form :model="sysConfig" label-width="140px">
+            <el-form-item label="CORS Origins">
+              <el-input v-model="sysConfig.cors_origins" placeholder="http://localhost:3000,http://127.0.0.1:3000" />
+              <div style="font-size: 11px; color: var(--rs-text-secondary); margin-top: 4px;">多个地址用逗号分隔，修改后需重启生效</div>
+            </el-form-item>
+            <el-form-item label="运行环境"><el-tag>{{ sysConfig.environment }}</el-tag></el-form-item>
           </el-form>
-          <div style="font-size: 12px; color: var(--rs-text-secondary); margin-top: 8px;">
-            部分配置（SECRET_KEY、数据库密码）只能在 .env 文件中修改。
+        </div>
+
+        <div style="margin-top: 16px; display: flex; gap: 8px;">
+          <el-button type="primary" size="large" @click="saveSystemConfig" :loading="savingSys">保存所有配置</el-button>
+          <div style="font-size: 12px; color: var(--rs-text-secondary); line-height: 40px;">
+            安全类配置（SECRET_KEY、数据库密码、Redis密码）只能在 .env 文件中修改
           </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- 系统日志 (admin only) -->
+      <el-tab-pane v-if="isAdmin" label="系统日志" name="logs">
+        <div class="card" style="margin-top: 12px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+            <h3>操作审计日志</h3>
+            <el-button size="small" @click="loadLogs">刷新</el-button>
+          </div>
+          <el-table :data="auditLogs" style="width: 100%;" size="small">
+            <el-table-column prop="action" label="操作" min-width="200" />
+            <el-table-column prop="severity" label="级别" width="80">
+              <template #default="{ row }">
+                <el-tag :type="{critical:'danger',high:'warning',info:'info'}[row.severity]" size="small">{{ row.severity }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="user_id" label="用户ID" width="80" />
+            <el-table-column prop="ip_address" label="IP" width="130" />
+            <el-table-column prop="detail" label="详情" min-width="150">
+              <template #default="{ row }"><span style="font-size: 12px; color: var(--rs-text-secondary);">{{ row.detail }}</span></template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="时间" width="160">
+              <template #default="{ row }">{{ row.created_at?.replace('T', ' ').slice(0, 19) }}</template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="!auditLogs.length" description="暂无日志" />
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -159,11 +219,52 @@ const testWebhook = async () => {
 
 // System config (admin only)
 const sysConfig = ref({})
+const auditLogs = ref([])
+const savingSys = ref(false)
+const testingLLM = ref(false)
+const llmTestResult = ref(null)
+
+const saveSystemConfig = async () => {
+  savingSys.value = true
+  try {
+    await api.put('/auth/settings/system', {
+      llm_api_key: sysConfig.value.llm_api_key,
+      llm_base_url: sysConfig.value.llm_base_url,
+      llm_model: sysConfig.value.llm_model,
+      nvd_api_key: sysConfig.value.nvd_api_key,
+      notify_webhook_url: sysConfig.value.notify_webhook_url,
+      notify_channel: sysConfig.value.notify_channel,
+      max_concurrent_scans: String(sysConfig.value.max_concurrent_scans),
+      max_targets_per_scan: String(sysConfig.value.max_targets_per_scan),
+      cors_origins: sysConfig.value.cors_origins,
+    })
+    ElMessage.success('所有配置已保存')
+  } catch (e) { ElMessage.error('保存失败') }
+  finally { savingSys.value = false }
+}
+
+const testLLM = async () => {
+  testingLLM.value = true
+  llmTestResult.value = null
+  try {
+    if (sysConfig.value.llm_api_key && !sysConfig.value.llm_api_key.startsWith('***')) {
+      await saveSystemConfig()
+    }
+    llmTestResult.value = await api.post('/auth/settings/test-llm')
+  } catch (e) { llmTestResult.value = { status: 'failed', error: '请求失败' } }
+  finally { testingLLM.value = false }
+}
+
+const loadLogs = async () => {
+  try { const res = await api.get('/auth/audit-logs'); auditLogs.value = res.items || [] }
+  catch { auditLogs.value = [] }
+}
 
 onMounted(async () => {
   try { profile.value = await api.get('/auth/me') } catch {}
   if (isAdmin.value) {
     try { sysConfig.value = await api.get('/auth/settings/system') } catch {}
+    await loadLogs()
   }
 })
 </script>

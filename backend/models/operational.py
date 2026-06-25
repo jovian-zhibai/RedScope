@@ -287,3 +287,11 @@ class ProjectTemplate(Base):
     max_concurrency = Column(Integer, default=50)
     created_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key = Column(String(128), primary_key=True)
+    value = Column(String(4096), nullable=False, default="")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

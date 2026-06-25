@@ -32,6 +32,8 @@ async def init_db():
 async def _ensure_default_admin():
     from sqlalchemy import select
     from backend.models.user import User
+    import secrets
+    import os
 
     async with async_session() as db:
         result = await db.execute(select(User).where(User.role == "admin"))
@@ -41,9 +43,11 @@ async def _ensure_default_admin():
         from passlib.context import CryptContext
         pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+        password = secrets.token_urlsafe(16)
+
         admin = User(
             username="admin",
-            password_hash=pwd_context.hash("RedScope@2026"),
+            password_hash=pwd_context.hash(password),
             display_name="系统管理员",
             role="admin",
             is_active=True,
@@ -51,10 +55,15 @@ async def _ensure_default_admin():
         db.add(admin)
         await db.commit()
 
+        password_file = "/app/data/init-password"
+        os.makedirs(os.path.dirname(password_file), exist_ok=True)
+        with open(password_file, "w") as f:
+            f.write(f"RedScope 管理员初始密码\n用户名: admin\n密码: {password}\n\n请登录后立即修改密码！\n")
+
         from backend.core.error_handler import logger
         logger.info("="*50)
         logger.info("  默认管理员已创建")
         logger.info("  用户名: admin")
-        logger.info("  密码: RedScope@2026")
-        logger.info("  ⚠️  请登录后立即修改密码！")
+        logger.info(f"  密码已写入: {password_file}")
+        logger.info("  查看: cat data/init-password")
         logger.info("="*50)

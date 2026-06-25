@@ -93,11 +93,14 @@ services:
       SCAN_RUNNER_URL: http://scan-runner:9090
       RUNNER_SECRET: ${RUNNER_SECRET:-redscope-runner-secret}
     volumes:
-      - scan_output:/app/output  # rw needed for _run_local fallback; Docker scans go through scan-runner
-      - ./plugins:/app/plugins:ro
+      - scan_output:/app/output
+      - ./plugins:/app/plugins
       - ./pipelines:/app/pipelines:ro
+      - ./data:/app/data
     ports:
       - "127.0.0.1:8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

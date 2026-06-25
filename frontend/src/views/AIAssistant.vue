@@ -137,11 +137,12 @@ const nlDescription = ref('')
 const querying = ref(false)
 
 const quickQuestions = [
+  '帮我检查配置',
   '如何检测 SQL 注入？',
   '发现 Tomcat 8.5，推荐哪些 PoC？',
   'Spring Boot Actuator 暴露怎么利用？',
   'NTLM Relay 攻击步骤？',
-  '如何写好渗透测试报告的总结？',
+  'CTF: 帮我分析这道 Web 题',
 ]
 
 onMounted(async () => {

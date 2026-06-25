@@ -18,6 +18,22 @@
       </div>
     </div>
 
+    <!-- Workflow Guide -->
+    <div v-if="project.asset_count === 0" class="card" style="padding: 16px; margin-bottom: 16px; border-left: 4px solid var(--rs-accent);">
+      <h4 style="margin-bottom: 12px;">快速开始</h4>
+      <el-steps :active="workflowStep" finish-status="success" simple style="margin-bottom: 12px;">
+        <el-step title="添加资产" @click="$router.push(`/projects/${project.id}/assets`)" style="cursor: pointer;" />
+        <el-step title="配置引擎" @click="$router.push('/plugins')" style="cursor: pointer;" />
+        <el-step title="开始扫描" @click="$router.push(`/projects/${project.id}/scanning`)" style="cursor: pointer;" />
+      </el-steps>
+      <div style="display: flex; gap: 8px;">
+        <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/assets`)">添加资产 →</el-button>
+        <el-upload :action="`/api/v1/projects/${project.id}/import/csv-assets`" :headers="uploadHeaders" :on-success="onImportSuccess" :show-file-list="false" accept=".csv">
+          <el-button size="small">导入 CSV</el-button>
+        </el-upload>
+      </div>
+    </div>
+
     <div class="stat-grid">
       <div class="stat-card info"><div class="stat-label">资产总数</div><div class="stat-value">{{ project.asset_count }}</div></div>
       <div class="stat-card warning"><div class="stat-label">发现漏洞</div><div class="stat-value">{{ project.finding_count }}</div></div>
@@ -240,6 +256,7 @@ const router = useRouter()
 const pid = route.params.id
 const project = ref(null)
 const activeTab = ref('assets')
+const workflowStep = ref(0)
 const reports = ref([])
 const generating = ref(false)
 const matching = ref(false)

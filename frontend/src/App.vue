@@ -7,57 +7,64 @@
         <router-link to="/" class="nav-item" active-class="active" exact>
           <el-icon><DataBoard /></el-icon> 总览
         </router-link>
+
+        <div class="nav-section">工作台</div>
         <router-link to="/projects" class="nav-item" active-class="active">
           <el-icon><FolderOpened /></el-icon> 项目管理
+        </router-link>
+        <router-link to="/assets" class="nav-item" active-class="active">
+          <el-icon><Monitor /></el-icon> 资产管理
+        </router-link>
+        <router-link to="/scans" class="nav-item" active-class="active">
+          <el-icon><VideoPlay /></el-icon> 扫描任务
+        </router-link>
+        <router-link to="/vulns" class="nav-item" active-class="active">
+          <el-icon><Warning /></el-icon> 漏洞管理
+        </router-link>
+
+        <div class="nav-section">红队作战</div>
+        <router-link to="/warroom" class="nav-item" active-class="active">
+          <el-icon><Aim /></el-icon> 作战管理
+        </router-link>
+        <router-link to="/redblue" class="nav-item" active-class="active">
+          <el-icon><TrophyBase /></el-icon> 红蓝对抗
+        </router-link>
+        <router-link to="/testing" class="nav-item" active-class="active">
+          <el-icon><EditPen /></el-icon> 手工测试
+        </router-link>
+
+        <div class="nav-section">智能</div>
+        <router-link to="/ai" class="nav-item" active-class="active">
+          <el-icon><MagicStick /></el-icon> AI 助手
         </router-link>
         <router-link to="/knowledge" class="nav-item" active-class="active">
           <el-icon><Document /></el-icon> 漏洞情报
         </router-link>
-        <router-link to="/ai" class="nav-item" active-class="active">
-          <el-icon><MagicStick /></el-icon> AI 助手
-        </router-link>
+
+        <div class="nav-section">系统</div>
         <router-link to="/plugins" class="nav-item" active-class="active">
           <el-icon><SetUp /></el-icon> 工具管理
-        </router-link>
-        <router-link to="/baseline" class="nav-item" active-class="active">
-          <el-icon><Checked /></el-icon> 基线合规
         </router-link>
         <router-link to="/workflow" class="nav-item" active-class="active">
           <el-icon><Tickets /></el-icon> 工单管理
         </router-link>
-        <div style="padding: 8px 20px; font-size: 11px; color: var(--rs-text-secondary); margin-top: 8px;">管理</div>
         <router-link to="/users" class="nav-item" active-class="active">
           <el-icon><User /></el-icon> 用户管理
         </router-link>
-        <router-link to="/notifications" class="nav-item" active-class="active">
-          <el-icon><Bell /></el-icon> 通知设置
+        <router-link to="/settings" class="nav-item" active-class="active">
+          <el-icon><Setting /></el-icon> 设置
         </router-link>
-        <router-link to="/tenants" class="nav-item" active-class="active">
-          <el-icon><OfficeBuilding /></el-icon> 租户管理
-        </router-link>
-        <a href="/portal" class="nav-item" target="_blank" style="text-decoration: none;">
-          <el-icon><Link /></el-icon> 客户门户
-        </a>
       </nav>
-      <div style="padding: 12px 20px; border-top: 1px solid var(--rs-border); font-size: 11px; color: var(--rs-text-secondary);">
-        RedScope v1.0
+      <div style="padding: 12px 24px; border-top: 1px solid var(--rs-border); font-size: 11px; color: var(--rs-text-secondary);">
+        RedScope v1.1
       </div>
     </aside>
     <div class="main-content">
       <header class="topbar">
-        <span style="color: var(--rs-text-secondary);">{{ $route.meta.title }}</span>
+        <span style="color: var(--rs-text-secondary); font-size: 13px;">{{ $route.meta.title }}</span>
         <div style="display: flex; align-items: center; gap: 12px;">
           <div style="position: relative;">
-            <el-input
-              v-model="searchQuery"
-              placeholder="搜索... (Ctrl+K)"
-              size="small"
-              style="width: 280px;"
-              :prefix-icon="Search"
-              @input="onSearch"
-              @focus="showSearchResults = true"
-              @blur="hideSearch"
-            />
+            <el-input v-model="searchQuery" placeholder="搜索项目/漏洞/资产... (Ctrl+K)" size="small" style="width: 300px;" :prefix-icon="Search" @input="onSearch" @focus="showSearchResults = true" @blur="hideSearch" />
             <div v-if="showSearchResults && hasResults" class="search-dropdown">
               <div v-if="searchResults.projects.length">
                 <div class="search-section">项目</div>
@@ -74,16 +81,20 @@
                 <div v-for="r in searchResults.assets" :key="'a'+r.id" class="search-item" @mousedown="goTo(`/projects/${r.project_id}/assets`)">{{ r.host }}</div>
               </div>
               <div v-if="searchResults.knowledge.length">
-                <div class="search-section">漏洞情报</div>
+                <div class="search-section">情报</div>
                 <div v-for="r in searchResults.knowledge" :key="'k'+r.id" class="search-item" @mousedown="goTo('/knowledge')">{{ r.cve_id }} {{ r.title }}</div>
               </div>
             </div>
           </div>
+          <el-button size="small" circle @click="toggleTheme" :title="isDark ? '切换亮色' : '切换暗色'">
+            {{ isDark ? '☀️' : '🌙' }}
+          </el-button>
           <el-dropdown trigger="click">
-            <el-avatar :size="28" style="cursor: pointer;">{{ userInitial }}</el-avatar>
+            <el-avatar :size="30" style="cursor: pointer; background: var(--rs-accent);">{{ userInitial }}</el-avatar>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="$router.push('/settings')">设置</el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/settings')">系统设置</el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/settings?tab=profile')">个人信息</el-dropdown-item>
                 <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -91,36 +102,25 @@
         </div>
       </header>
       <main class="page-content">
-        <!-- Onboarding guide for new users -->
-        <div v-if="showOnboarding && $route.path === '/'" class="card" style="padding: 20px; margin-bottom: 16px; border-left: 4px solid var(--rs-accent);">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="margin: 0;">欢迎使用 RedScope</h3>
-            <el-button size="small" text @click="dismissOnboarding">✕</el-button>
-          </div>
-          <div style="margin-top: 12px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
-            <div class="card onboard-step" @click="$router.push('/projects')">
-              <div style="font-size: 24px; margin-bottom: 8px;">1</div>
-              <div style="font-weight: bold;">创建项目</div>
-              <div style="font-size: 12px; color: var(--rs-text-secondary); margin-top: 4px;">选择实战/靶场/研究模式</div>
-            </div>
-            <div class="card onboard-step" @click="$router.push('/plugins')">
-              <div style="font-size: 24px; margin-bottom: 8px;">2</div>
-              <div style="font-weight: bold;">配置工具</div>
-              <div style="font-size: 12px; color: var(--rs-text-secondary); margin-top: 4px;">加载 Nmap/Nuclei 等引擎</div>
-            </div>
-            <div class="card onboard-step" @click="goOnboardStep(3)">
-              <div style="font-size: 24px; margin-bottom: 8px;">3</div>
-              <div style="font-weight: bold;">添加资产</div>
-              <div style="font-size: 12px; color: var(--rs-text-secondary); margin-top: 4px;">手动或 CSV/Nessus 导入</div>
-            </div>
-            <div class="card onboard-step" @click="goOnboardStep(4)">
-              <div style="font-size: 24px; margin-bottom: 8px;">4</div>
-              <div style="font-weight: bold;">开始扫描</div>
-              <div style="font-size: 12px; color: var(--rs-text-secondary); margin-top: 4px;">选引擎、定策略、出报告</div>
-            </div>
-          </div>
-        </div>
         <router-view />
+
+        <el-dialog v-model="showQuickCreate" title="新建项目" width="520px">
+          <el-form :model="quickForm" label-width="100px">
+            <el-form-item label="项目名称" required><el-input v-model="quickForm.name" placeholder="如：XX公司渗透测试" /></el-form-item>
+            <el-form-item label="项目模式">
+              <el-radio-group v-model="quickForm.mode">
+                <el-radio-button value="combat">实战</el-radio-button>
+                <el-radio-button value="range">靶场</el-radio-button>
+                <el-radio-button value="research">研究</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="quickForm.mode === 'combat'" label="客户名称"><el-input v-model="quickForm.client_name" /></el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="showQuickCreate = false">取消</el-button>
+            <el-button type="primary" @click="quickCreateProject" :loading="quickCreating">创建并进入</el-button>
+          </template>
+        </el-dialog>
       </main>
       <div v-if="showTerminal" class="terminal-panel">
         <div class="terminal-header">
@@ -155,40 +155,35 @@ import api from './stores/api'
 
 const router = useRouter()
 const showTerminal = ref(false)
+const isDark = ref(localStorage.getItem('rs_theme') !== 'light')
+
+const toggleTheme = () => {
+  isDark.value = !isDark.value
+  document.documentElement.className = isDark.value ? 'dark' : 'light'
+  localStorage.setItem('rs_theme', isDark.value ? 'dark' : 'light')
+}
 const termSessions = ref(['main'])
 const activeSession = ref('main')
 let sessionCounter = 1
 
-const addSession = () => {
-  sessionCounter++
-  const name = `shell-${sessionCounter}`
-  termSessions.value.push(name)
-  activeSession.value = name
-}
-
+const addSession = () => { sessionCounter++; const name = `shell-${sessionCounter}`; termSessions.value.push(name); activeSession.value = name }
 const closeSession = (index) => {
   const removed = termSessions.value.splice(index, 1)
-  if (activeSession.value === removed[0]) {
-    activeSession.value = termSessions.value[Math.min(index, termSessions.value.length - 1)] || 'main'
-  }
-  if (termSessions.value.length === 0) {
-    termSessions.value = ['main']
-    activeSession.value = 'main'
-  }
+  if (activeSession.value === removed[0]) activeSession.value = termSessions.value[Math.min(index, termSessions.value.length - 1)] || 'main'
+  if (termSessions.value.length === 0) { termSessions.value = ['main']; activeSession.value = 'main' }
 }
+
+const showQuickCreate = ref(false)
+const quickCreating = ref(false)
+const quickForm = ref({ name: '', mode: 'combat', client_name: '' })
 
 const searchQuery = ref('')
 const showSearchResults = ref(false)
 const searchResults = ref({ projects: [], assets: [], findings: [], knowledge: [] })
-const showOnboarding = ref(!localStorage.getItem('rs_onboarding_dismissed'))
 
 const userInitial = computed(() => {
-  try {
-    const token = localStorage.getItem('token')
-    if (!token) return 'U'
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return (payload.username || 'U')[0].toUpperCase()
-  } catch { return 'U' }
+  try { const token = localStorage.getItem('token'); if (!token) return 'U'; const payload = JSON.parse(atob(token.split('.')[1])); return (payload.username || 'U')[0].toUpperCase() }
+  catch { return 'U' }
 })
 
 const hasResults = computed(() =>
@@ -201,58 +196,35 @@ const onSearch = () => {
   clearTimeout(searchTimer)
   if (searchQuery.value.length < 2) { searchResults.value = { projects: [], assets: [], findings: [], knowledge: [] }; return }
   searchTimer = setTimeout(async () => {
-    try {
-      searchResults.value = await api.get('/search', { params: { q: searchQuery.value } })
-    } catch (e) { /* empty */ }
+    try { searchResults.value = await api.get('/search', { params: { q: searchQuery.value } }) } catch {}
   }, 300)
 }
 
 const hideSearch = () => { setTimeout(() => { showSearchResults.value = false }, 200) }
-
-const goTo = (path) => {
-  showSearchResults.value = false
-  searchQuery.value = ''
-  router.push(path)
-}
-
+const goTo = (path) => { showSearchResults.value = false; searchQuery.value = ''; router.push(path) }
 const logout = () => { localStorage.removeItem('token'); router.push('/login') }
 
-const dismissOnboarding = () => {
-  showOnboarding.value = false
-  localStorage.setItem('rs_onboarding_dismissed', '1')
-}
-
-const goOnboardStep = async (step) => {
+const quickCreateProject = async () => {
+  if (!quickForm.value.name) { ElMessage.warning('请输入项目名称'); return }
+  quickCreating.value = true
   try {
-    const res = await api.get('/projects')
-    const projects = res.items || []
-    if (projects.length === 0) {
-      ElMessage.info('请先创建一个项目')
-      router.push('/projects')
-      return
-    }
-    const pid = projects[0].id
-    if (step === 3) router.push(`/projects/${pid}/assets`)
-    else if (step === 4) router.push(`/projects/${pid}/scanning`)
-  } catch { router.push('/projects') }
+    const res = await api.post('/projects', quickForm.value)
+    showQuickCreate.value = false
+    ElMessage.success('项目已创建')
+    router.push(`/projects/${res.id}`)
+  } catch (e) { ElMessage.error('创建失败') }
+  finally { quickCreating.value = false }
 }
 
 const handleKeydown = (e) => {
   if (e.ctrlKey && e.key === '`') { e.preventDefault(); showTerminal.value = !showTerminal.value }
   if (e.ctrlKey && e.key === 'k') { e.preventDefault(); document.querySelector('.topbar input')?.focus() }
+  if (e.ctrlKey && e.key === 'n') { e.preventDefault(); showQuickCreate.value = true }
 }
 
-onMounted(() => window.addEventListener('keydown', handleKeydown))
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
+  document.documentElement.className = isDark.value ? 'dark' : 'light'
+})
 onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 </script>
-
-<style scoped>
-.terminal-panel { height: 300px; border-top: 1px solid var(--rs-border); display: flex; flex-direction: column; flex-shrink: 0; }
-.terminal-header { display: flex; justify-content: space-between; align-items: center; padding: 4px 12px; background: var(--rs-bg-secondary); border-bottom: 1px solid var(--rs-border); font-size: 12px; color: var(--rs-text-secondary); }
-.terminal-toggle { text-align: center; padding: 4px; font-size: 12px; color: var(--rs-text-secondary); cursor: pointer; border-top: 1px solid var(--rs-border); background: var(--rs-bg-secondary); }
-.terminal-toggle:hover { color: var(--rs-accent); }
-.search-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: var(--rs-bg-secondary); border: 1px solid var(--rs-border); border-radius: 6px; margin-top: 4px; max-height: 400px; overflow-y: auto; z-index: 999; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-.search-section { padding: 6px 12px; font-size: 11px; color: var(--rs-text-secondary); text-transform: uppercase; }
-.search-item { padding: 8px 12px; cursor: pointer; font-size: 13px; }
-.search-item:hover { background: var(--rs-bg-primary); }
-</style>

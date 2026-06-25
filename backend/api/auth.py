@@ -182,21 +182,89 @@ async def admin_update_user(user_id: int, req: dict, request: Request, db: Async
 
 
 @router.get("/settings/system")
-async def get_system_settings(request: Request):
+async def get_system_settings(request: Request, db: AsyncSession = Depends(get_db)):
     if request.state.role != "admin":
         raise HTTPException(403, "仅管理员可查看系统配置")
     s = get_settings()
+    from backend.models.operational import SystemSetting
+    result = await db.execute(select(SystemSetting))
+    db_settings = {r.key: r.value for r in result.scalars().all()}
+
     return {
-        "llm_api_key": "***" + s.llm_api_key[-4:] if s.llm_api_key else "",
-        "llm_base_url": s.llm_base_url,
-        "llm_model": s.llm_model,
+        "llm_api_key": db_settings.get("llm_api_key", "***" + s.llm_api_key[-4:] if s.llm_api_key else ""),
+        "llm_base_url": db_settings.get("llm_base_url", s.llm_base_url),
+        "llm_model": db_settings.get("llm_model", s.llm_model),
         "cors_origins": s.cors_origins,
-        "notify_webhook_url": s.notify_webhook_url,
-        "notify_channel": s.notify_channel,
+        "notify_webhook_url": db_settings.get("notify_webhook_url", s.notify_webhook_url),
+        "notify_channel": db_settings.get("notify_channel", s.notify_channel),
         "max_concurrent_scans": s.max_concurrent_scans,
         "max_targets_per_scan": s.max_targets_per_scan,
         "environment": s.environment,
     }
+
+
+@router.put("/settings/system")
+async def update_system_settings(req: dict, request: Request, db: AsyncSession = Depends(get_db)):
+    if request.state.role != "admin":
+        raise HTTPException(403, "仅管理员可修改")
+    from backend.models.operational import SystemSetting
+
+    allowed_keys = {"llm_api_key", "llm_base_url", "llm_model", "notify_webhook_url", "notify_channel",
+                     "max_concurrent_scans", "max_targets_per_scan", "cors_origins", "nvd_api_key"}
+    for key, value in req.items():
+        if key not in allowed_keys:
+            continue
+        existing = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
+        setting = existing.scalar_one_or_none()
+        if setting:
+            setting.value = str(value)
+        else:
+            db.add(SystemSetting(key=key, value=str(value)))
+    await db.flush()
+    return {"message": "配置已保存"}
+
+
+@router.post("/settings/test-llm")
+async def test_llm_connection(request: Request, db: AsyncSession = Depends(get_db)):
+    if request.state.role != "admin":
+        raise HTTPException(403, "仅管理员可操作")
+    from backend.models.operational import SystemSetting
+
+    result = await db.execute(select(SystemSetting))
+    db_settings = {r.key: r.value for r in result.scalars().all()}
+
+    api_key = db_settings.get("llm_api_key", get_settings().llm_api_key)
+    base_url = db_settings.get("llm_base_url", get_settings().llm_base_url)
+    model = db_settings.get("llm_model", get_settings().llm_model)
+
+    if not api_key:
+        return {"status": "failed", "error": "API Key 未配置"}
+
+    try:
+        from backend.ai.llm_client import LLMClient
+        client = LLMClient(api_key=api_key, base_url=base_url, model=model)
+        reply = await client.chat("你好", "回复'连接成功'四个字即可", temperature=0)
+        return {"status": "ok", "reply": reply[:100]}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)[:200]}
+
+
+@router.get("/audit-logs")
+async def get_audit_logs(request: Request, db: AsyncSession = Depends(get_db)):
+    if request.state.role != "admin":
+        raise HTTPException(403, "仅管理员可查看")
+    from backend.models.operational import AuditLog
+    result = await db.execute(
+        select(AuditLog).order_by(AuditLog.created_at.desc()).limit(100)
+    )
+    logs = result.scalars().all()
+    return {"items": [
+        {"id": l.id, "user_id": l.user_id, "action": l.action,
+         "target_type": l.target_type, "detail": l.detail,
+         "ip_address": l.ip_address, "severity": l.severity,
+         "created_at": l.created_at.isoformat() if l.created_at else None}
+        for l in logs
+    ]}
 
 
 @router.post("/projects/{project_id}/clone")

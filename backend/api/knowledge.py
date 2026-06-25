@@ -62,9 +62,26 @@ async def create_knowledge(req: dict, request: Request, db: AsyncSession = Depen
 async def trigger_nvd_fetch(request: Request):
     if request.state.role not in ("admin", "leader"):
         raise HTTPException(403, "仅管理员/组长可触发")
+
+    from backend.config import get_settings
+    s = get_settings()
+    if not s.llm_api_key:
+        try:
+            from backend.database_sync import SyncSession
+            from backend.models.operational import SystemSetting
+            with SyncSession() as db:
+                result = db.execute(SystemSetting.__table__.select().where(SystemSetting.__table__.c.key == "nvd_api_key"))
+                row = result.first()
+                if not row or not row.value:
+                    raise HTTPException(400, "请先在 设置→系统配置 中配置 NVD API Key")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(400, "请先配置 NVD API Key")
+
     from backend.tasks.scan_worker import sync_vulnerability_intel
     sync_vulnerability_intel.delay()
-    return {"status": "triggered", "added": 0, "message": "NVD 抓取任务已提交后台执行"}
+    return {"status": "triggered", "message": "NVD 抓取任务已提交后台执行，请稍后刷新查看"}
 
 
 @router.post("/fetch-cnvd")
