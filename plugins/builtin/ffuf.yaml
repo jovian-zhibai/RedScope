@@ -1,0 +1,32 @@
+plugin:
+  name: ffuf
+  display_name: "ffuf"
+  version: "2.1.0"
+  description: "高速 Web Fuzzer (目录/参数/子域名模糊测试)"
+  category: fuzz
+
+  docker:
+    image: "ffuf/ffuf:latest"
+
+  inputs:
+    - name: url
+      type: string
+      required: true
+      description: "目标 URL (用 FUZZ 标记注入点，如 http://target/FUZZ)"
+    - name: wordlist
+      type: string
+      default: "/usr/share/wordlists/dirb/common.txt"
+      description: "字典文件路径"
+    - name: extra_args
+      type: string
+      required: false
+
+  command: "ffuf -u {url} -w {wordlist} -o /output/result.json -of json -mc 200,301,302,403 {extra_args}"
+
+  output:
+    format: json
+    path: "/output/result.json"
+
+  proxy:
+    supported: true
+    flag: "-x {proxy_url}"

@@ -1,0 +1,29 @@
+plugin:
+  name: whatweb
+  display_name: "WhatWeb"
+  version: "0.5.5"
+  description: "Web 应用指纹识别 (CMS/框架/服务器/插件)"
+  category: recon
+
+  docker:
+    image: "lnxbil/whatweb:latest"
+
+  inputs:
+    - name: target
+      type: string
+      required: true
+      description: "目标 URL"
+    - name: aggression
+      type: string
+      default: "3"
+      description: "激进程度 (1=隐蔽 3=标准 4=全量)"
+
+  command: "whatweb -a {aggression} --log-json=/output/result.json {target}"
+
+  output:
+    format: json
+    path: "/output/result.json"
+
+  proxy:
+    supported: true
+    flag: "--proxy {proxy_url}"

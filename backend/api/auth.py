@@ -181,6 +181,24 @@ async def admin_update_user(user_id: int, req: dict, request: Request, db: Async
     return {"message": "更新成功"}
 
 
+@router.get("/settings/system")
+async def get_system_settings(request: Request):
+    if request.state.role != "admin":
+        raise HTTPException(403, "仅管理员可查看系统配置")
+    s = get_settings()
+    return {
+        "llm_api_key": "***" + s.llm_api_key[-4:] if s.llm_api_key else "",
+        "llm_base_url": s.llm_base_url,
+        "llm_model": s.llm_model,
+        "cors_origins": s.cors_origins,
+        "notify_webhook_url": s.notify_webhook_url,
+        "notify_channel": s.notify_channel,
+        "max_concurrent_scans": s.max_concurrent_scans,
+        "max_targets_per_scan": s.max_targets_per_scan,
+        "environment": s.environment,
+    }
+
+
 @router.post("/projects/{project_id}/clone")
 async def clone_project(project_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     from backend.models.project import Project, ScopeRule

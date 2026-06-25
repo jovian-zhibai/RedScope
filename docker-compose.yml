@@ -59,7 +59,7 @@ services:
     environment:
       SCAN_OUTPUT_DIR: /app/output
       RUNNER_SECRET: ${RUNNER_SECRET:-redscope-runner-secret}
-      ALLOWED_IMAGES: "instrumentisto/nmap,projectdiscovery/nuclei,projectdiscovery/subfinder,projectdiscovery/httpx,paoloo/sqlmap,cyal1/dirsearch,ghcr.io/zan8in/afrog,shadowlianmc/fscan"
+      ALLOWED_IMAGES: "instrumentisto/nmap,projectdiscovery/nuclei,projectdiscovery/subfinder,projectdiscovery/httpx,paoloo/sqlmap,cyal1/dirsearch,ghcr.io/zan8in/afrog,shadowlianmc/fscan,lnxbil/whatweb,ekultek/wafw00f,ffuf/ffuf"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - scan_output:/app/output

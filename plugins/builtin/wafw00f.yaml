@@ -1,0 +1,25 @@
+plugin:
+  name: wafw00f
+  display_name: "wafw00f"
+  version: "2.2.0"
+  description: "WAF 识别工具 (检测 Web 应用防火墙类型)"
+  category: recon
+
+  docker:
+    image: "ekultek/wafw00f:latest"
+
+  inputs:
+    - name: target
+      type: string
+      required: true
+      description: "目标 URL"
+
+  command: "wafw00f {target} -o /output/result.json -f json"
+
+  output:
+    format: json
+    path: "/output/result.json"
+
+  proxy:
+    supported: true
+    flag: "-p {proxy_url}"

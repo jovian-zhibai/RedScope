@@ -83,7 +83,7 @@
             <el-avatar :size="28" style="cursor: pointer;">{{ userInitial }}</el-avatar>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="$router.push('/profile')">个人设置</el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/settings')">设置</el-dropdown-item>
                 <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -98,22 +98,22 @@
             <el-button size="small" text @click="dismissOnboarding">✕</el-button>
           </div>
           <div style="margin-top: 12px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
-            <div class="card" style="padding: 12px; cursor: pointer; text-align: center;" @click="$router.push('/projects')">
+            <div class="card onboard-step" @click="$router.push('/projects')">
               <div style="font-size: 24px; margin-bottom: 8px;">1</div>
               <div style="font-weight: bold;">创建项目</div>
               <div style="font-size: 12px; color: var(--rs-text-secondary); margin-top: 4px;">选择实战/靶场/研究模式</div>
             </div>
-            <div class="card" style="padding: 12px; cursor: pointer; text-align: center;" @click="$router.push('/plugins')">
+            <div class="card onboard-step" @click="$router.push('/plugins')">
               <div style="font-size: 24px; margin-bottom: 8px;">2</div>
               <div style="font-weight: bold;">配置工具</div>
               <div style="font-size: 12px; color: var(--rs-text-secondary); margin-top: 4px;">加载 Nmap/Nuclei 等引擎</div>
             </div>
-            <div class="card" style="padding: 12px; text-align: center;">
+            <div class="card onboard-step" @click="goOnboardStep(3)">
               <div style="font-size: 24px; margin-bottom: 8px;">3</div>
               <div style="font-weight: bold;">添加资产</div>
               <div style="font-size: 12px; color: var(--rs-text-secondary); margin-top: 4px;">手动或 CSV/Nessus 导入</div>
             </div>
-            <div class="card" style="padding: 12px; text-align: center;">
+            <div class="card onboard-step" @click="goOnboardStep(4)">
               <div style="font-size: 24px; margin-bottom: 8px;">4</div>
               <div style="font-weight: bold;">开始扫描</div>
               <div style="font-size: 12px; color: var(--rs-text-secondary); margin-top: 4px;">选引擎、定策略、出报告</div>
@@ -149,6 +149,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import TerminalPanel from './components/TerminalPanel.vue'
 import api from './stores/api'
 
@@ -219,6 +220,21 @@ const logout = () => { localStorage.removeItem('token'); router.push('/login') }
 const dismissOnboarding = () => {
   showOnboarding.value = false
   localStorage.setItem('rs_onboarding_dismissed', '1')
+}
+
+const goOnboardStep = async (step) => {
+  try {
+    const res = await api.get('/projects')
+    const projects = res.items || []
+    if (projects.length === 0) {
+      ElMessage.info('请先创建一个项目')
+      router.push('/projects')
+      return
+    }
+    const pid = projects[0].id
+    if (step === 3) router.push(`/projects/${pid}/assets`)
+    else if (step === 4) router.push(`/projects/${pid}/scanning`)
+  } catch { router.push('/projects') }
 }
 
 const handleKeydown = (e) => {
