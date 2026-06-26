@@ -34,10 +34,15 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="未登录，请先登录")
+    token = None
 
-    token = auth_header.split(" ", 1)[1]
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1]
+    elif "/download" in path or "/export/" in path:
+        token = request.query_params.get("token")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="未登录，请先登录")
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         request.state.user_id = int(payload.get("sub", 0))

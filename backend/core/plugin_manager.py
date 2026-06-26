@@ -123,6 +123,11 @@ class PluginManager:
 
     def build_command(self, plugin: PluginConfig, params: dict, proxy_url: str | None = None) -> str:
         cmd = plugin.command
+
+        for inp in plugin.inputs:
+            if inp.name not in params and inp.default:
+                params[inp.name] = inp.default
+
         for key, value in params.items():
             cmd = cmd.replace(f"{{{key}}}", str(value))
 
@@ -130,8 +135,10 @@ class PluginManager:
             proxy_flag = plugin.proxy.flag.replace("{proxy_url}", proxy_url)
             cmd = f"{cmd} {proxy_flag}"
 
-        # Clean up unreplaced optional placeholders
         import re
+        # Remove flags whose values are unreplaced placeholders (e.g. "-tags {tags}")
+        # Only match flags that start with a letter after the dash, to avoid matching port ranges like -10000
+        cmd = re.sub(r'-[a-zA-Z][\w-]*\s+\{[^}]+\}', '', cmd)
         cmd = re.sub(r'\{[^}]+\}', '', cmd).strip()
         cmd = re.sub(r'\s+', ' ', cmd)
 

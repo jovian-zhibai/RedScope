@@ -10,20 +10,25 @@ class LLMClient:
         self.base_url = base_url.rstrip("/")
         self.model = model
 
-    async def chat(self, system_prompt: str, user_message: str, temperature: float = 0.3) -> str:
+    async def chat(self, system_prompt: str, user_message: str, temperature: float = 0.3, history: list[dict] | None = None) -> str:
         url = self.base_url
         if not url.endswith("/chat/completions"):
             url = f"{url}/v1/chat/completions"
+
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            for h in history[:-1]:
+                if h.get("role") in ("user", "assistant") and h.get("content"):
+                    messages.append({"role": h["role"], "content": h["content"][:2000]})
+        messages.append({"role": "user", "content": user_message})
+
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
                 url,
                 headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
                 json={
                     "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
+                    "messages": messages,
                     "temperature": temperature,
                     "max_tokens": 4096,
                 },

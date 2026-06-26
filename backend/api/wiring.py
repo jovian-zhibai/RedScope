@@ -453,6 +453,7 @@ async def get_proxy_route(project_id: int, target: str, _=Depends(require_projec
 class AIChatRequest(BaseModel):
     message: str
     project_id: int | None = None
+    history: list[dict] | None = None
 
 
 class AIScanRecommendRequest(BaseModel):
@@ -478,7 +479,7 @@ async def ai_chat(req: AIChatRequest, request: Request, db: AsyncSession = Depen
             asset_count = await db.scalar(select(func.count()).where(Asset.project_id == req.project_id))
             context = f"项目: {project.name}, 模式: {project.mode}, 资产: {asset_count}, 漏洞: {finding_count}"
 
-    reply = await chat_with_assistant(req.message, context)
+    reply = await chat_with_assistant(req.message, context, history=req.history)
     return {"reply": reply}
 
 

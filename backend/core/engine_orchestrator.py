@@ -68,7 +68,7 @@ class EngineOrchestrator:
 
             logger.info(f"Dispatching to scan-runner: {plugin.name} task={task_id}")
 
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=120) as client:
                 resp = await client.post(
                     f"{self.runner_url}/jobs",
                     json={
@@ -91,10 +91,11 @@ class EngineOrchestrator:
             self._running_jobs.pop(task_id, None)
 
             if result["status"] == "completed":
-                return EngineResult(plugin.name, True, output_path=result.get("output_dir", ""), job_id=job_id)
+                return EngineResult(plugin.name, True, output_path=result.get("output_dir", ""),
+                                    error=result.get("stderr_summary", ""), job_id=job_id)
             else:
                 return EngineResult(plugin.name, False, output_path=result.get("output_dir", ""),
-                                    error=result.get("error", "Scan failed"), job_id=job_id)
+                                    error=result.get("error", "") or result.get("stderr_summary", "Scan failed"), job_id=job_id)
 
         except httpx.HTTPStatusError as e:
             return EngineResult(plugin.name, False, error=f"Scan runner rejected: {e.response.text[:500]}")

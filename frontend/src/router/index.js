@@ -30,11 +30,11 @@ const routes = [
   { path: '/plugins', name: 'Plugins', component: () => import('../views/Plugins.vue'), meta: { title: '工具管理' } },
   { path: '/workflow', name: 'Workflow', component: () => import('../views/Workflow.vue'), meta: { title: '工单管理' } },
   { path: '/baseline', name: 'Baseline', component: () => import('../views/Baseline.vue'), meta: { title: '基线合规' } },
-  { path: '/users', name: 'Users', component: () => import('../views/Users.vue'), meta: { title: '用户管理' } },
-  { path: '/tenants', name: 'Tenants', component: () => import('../views/Tenants.vue'), meta: { title: '租户管理' } },
-  { path: '/settings', name: 'Settings', component: () => import('../views/Settings.vue'), meta: { title: '设置' } },
-  { path: '/profile', redirect: '/settings' },
-  { path: '/notifications', redirect: '/settings' },
+  { path: '/users', redirect: '/settings' },
+  { path: '/tenants', redirect: '/settings' },
+  { path: '/settings', name: 'Settings', component: () => import('../views/Settings.vue'), meta: { title: '系统管理' } },
+  { path: '/profile', name: 'Profile', component: () => import('../views/Profile.vue'), meta: { title: '个人设置' } },
+  { path: '/notifications', redirect: '/profile' },
 
   // 独立页面
   { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { title: '登录', noAuth: true, noLayout: true } },

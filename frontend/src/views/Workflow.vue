@@ -70,7 +70,7 @@
         <h4 style="margin-bottom: 8px;">评论</h4>
         <div v-for="c in orderComments" :key="c.id" style="padding: 8px 0; border-bottom: 1px solid var(--rs-border); font-size: 13px;">
           <div>{{ c.content }}</div>
-          <div style="font-size: 11px; color: var(--rs-text-secondary); margin-top: 4px;">用户#{{ c.user_id }} · {{ c.created_at?.replace('T', ' ').slice(0, 19) }}</div>
+          <div style="font-size: 11px; color: var(--rs-text-secondary); margin-top: 4px;">{{ c.username || '用户#' + c.user_id }} · {{ c.created_at?.replace('T', ' ').slice(0, 19) }}</div>
         </div>
         <el-empty v-if="!orderComments.length" description="暂无评论" :image-size="40" />
         <div style="display: flex; gap: 8px; margin-top: 8px;">

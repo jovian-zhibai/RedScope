@@ -121,7 +121,23 @@
 
         <div v-if="detailFinding.evidence" style="margin-top: 16px;">
           <h4 style="margin-bottom: 8px; color: var(--rs-text-primary);">证据</h4>
-          <pre style="font-size: 12px; background: var(--rs-bg-secondary); padding: 12px; border-radius: 6px; overflow: auto; max-height: 300px;">{{ JSON.stringify(detailFinding.evidence, null, 2) }}</pre>
+          <div v-if="detailFinding.evidence.request" style="margin-bottom: 8px;">
+            <div style="font-size: 11px; color: var(--rs-text-secondary); margin-bottom: 4px;">HTTP 请求</div>
+            <pre style="font-size: 11px; background: var(--rs-bg-secondary); padding: 10px; border-radius: 6px; overflow: auto; max-height: 200px; white-space: pre-wrap; word-break: break-all; border-left: 3px solid var(--rs-accent);">{{ detailFinding.evidence.request }}</pre>
+          </div>
+          <div v-if="detailFinding.evidence.response" style="margin-bottom: 8px;">
+            <div style="font-size: 11px; color: var(--rs-text-secondary); margin-bottom: 4px;">HTTP 响应</div>
+            <pre style="font-size: 11px; background: var(--rs-bg-secondary); padding: 10px; border-radius: 6px; overflow: auto; max-height: 200px; white-space: pre-wrap; word-break: break-all; border-left: 3px solid var(--rs-warning);">{{ detailFinding.evidence.response }}</pre>
+          </div>
+          <div v-if="detailFinding.evidence.curl_command">
+            <div style="font-size: 11px; color: var(--rs-text-secondary); margin-bottom: 4px;">cURL 命令</div>
+            <pre style="font-size: 11px; background: var(--rs-bg-secondary); padding: 10px; border-radius: 6px; overflow: auto; white-space: pre-wrap; word-break: break-all; border-left: 3px solid var(--rs-success); cursor: pointer;" @click="navigator.clipboard.writeText(detailFinding.evidence.curl_command)">{{ detailFinding.evidence.curl_command }}</pre>
+          </div>
+          <div v-if="detailFinding.evidence.raw_log">
+            <div style="font-size: 11px; color: var(--rs-text-secondary); margin-bottom: 4px;">原始日志</div>
+            <pre style="font-size: 11px; background: var(--rs-bg-secondary); padding: 10px; border-radius: 6px; overflow: auto; max-height: 200px; white-space: pre-wrap;">{{ detailFinding.evidence.raw_log }}</pre>
+          </div>
+          <pre v-if="!detailFinding.evidence.request && !detailFinding.evidence.response && !detailFinding.evidence.curl_command && !detailFinding.evidence.raw_log" style="font-size: 11px; background: var(--rs-bg-secondary); padding: 10px; border-radius: 6px; overflow: auto; max-height: 200px;">{{ JSON.stringify(detailFinding.evidence, null, 2) }}</pre>
         </div>
       </div>
     </el-drawer>
@@ -205,15 +221,24 @@ const load = async () => {
 }
 
 const addFinding = async () => {
-  await api.post(`/projects/${pid}/findings`, form.value)
-  showAdd.value = false
-  logSessionActivity(pid, '手动录入漏洞', form.value.title)
-  await load()
+  if (!form.value.title) { ElMessage.warning('请输入漏洞名称'); return }
+  try {
+    await api.post(`/projects/${pid}/findings`, form.value)
+    showAdd.value = false
+    logSessionActivity(pid, '手动录入漏洞', form.value.title)
+    form.value = { title: '', vuln_type: 'sqli', severity: 'high', description: '', detail: '', solution: '' }
+    ElMessage.success('漏洞已录入')
+    await load()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '录入失败') }
 }
 
-const openDetail = (row) => {
-  detailFinding.value = row
+const openDetail = async (row) => {
   showDetail.value = true
+  try {
+    detailFinding.value = await api.get(`/projects/${pid}/findings/${row.id}`)
+  } catch {
+    detailFinding.value = row
+  }
   loadFindingScreenshots(row.id)
 }
 
@@ -273,6 +298,8 @@ const deleteFinding = async (row) => {
   await ElMessageBox.confirm(`确认删除漏洞「${row.title}」？此操作不可恢复。`, '删除确认', { type: 'warning' })
   await api.delete(`/projects/${pid}/findings/${row.id}`)
   ElMessage.success('已删除')
+  showDetail.value = false
+  detailFinding.value = null
   await load()
 }
 

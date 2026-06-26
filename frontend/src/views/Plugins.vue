@@ -3,11 +3,15 @@
     <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
       <h2>工具管理</h2>
       <div style="display: flex; gap: 8px;">
+        <el-select v-model="filterCategory" placeholder="分类筛选" clearable size="small" style="width: 120px;">
+          <el-option value="recon" label="侦察" /><el-option value="vuln_scan" label="漏扫" />
+          <el-option value="brute" label="爆破" /><el-option value="fuzz" label="模糊" /><el-option value="custom" label="自定义" />
+        </el-select>
         <el-button size="small" @click="showAdd = true"><el-icon><Plus /></el-icon> 添加自定义工具</el-button>
         <el-button type="primary" size="small" @click="reloadPlugins"><el-icon><Refresh /></el-icon> 重新加载</el-button>
       </div>
     </div>
-    <el-table :data="plugins" style="width: 100%;">
+    <el-table :data="filteredPlugins" style="width: 100%;">
       <el-table-column prop="display_name" label="工具名称" width="150" />
       <el-table-column prop="version" label="版本" width="100" />
       <el-table-column prop="description" label="描述" min-width="250" />
@@ -73,11 +77,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../stores/api'
 
 const plugins = ref([])
+const filterCategory = ref('')
+const filteredPlugins = computed(() => {
+  if (!filterCategory.value) return plugins.value
+  return plugins.value.filter(p => p.category === filterCategory.value)
+})
 const showAdd = ref(false)
 const adding = ref(false)
 const toolForm = ref({

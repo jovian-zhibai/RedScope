@@ -87,6 +87,13 @@ async def get_order(order_id: int, db: AsyncSession = Depends(get_db)):
     )
     comments = comments_result.scalars().all()
 
+    from backend.models.user import User
+    user_ids = list(set(c.user_id for c in comments if c.user_id))
+    user_map = {}
+    if user_ids:
+        users_result = await db.execute(select(User).where(User.id.in_(user_ids)))
+        user_map = {u.id: u.display_name or u.username for u in users_result.scalars().all()}
+
     return {
         "id": order.id, "title": order.title, "order_type": order.order_type,
         "description": order.description, "status": order.status,
@@ -94,8 +101,8 @@ async def get_order(order_id: int, db: AsyncSession = Depends(get_db)):
         "created_by": order.created_by, "assigned_to": order.assigned_to,
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "comments": [
-            {"id": c.id, "user_id": c.user_id, "content": c.content,
-             "created_at": c.created_at.isoformat() if c.created_at else None}
+            {"id": c.id, "user_id": c.user_id, "username": user_map.get(c.user_id, f"用户#{c.user_id}"),
+             "content": c.content, "created_at": c.created_at.isoformat() if c.created_at else None}
             for c in comments
         ],
     }

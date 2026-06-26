@@ -18,18 +18,31 @@
       </div>
     </div>
 
+    <!-- Authorization Expiry Warning -->
+    <div v-if="authExpired" style="padding: 12px 16px; margin-bottom: 16px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; display: flex; align-items: center; gap: 12px;">
+      <el-icon :size="20" style="color: var(--rs-danger);"><WarningFilled /></el-icon>
+      <div>
+        <div style="font-weight: 600; color: var(--rs-danger); font-size: 13px;">授权已过期</div>
+        <div style="font-size: 12px; color: var(--rs-text-secondary);">项目授权截止日期为 {{ project.auth_end_date }}，请确认授权续期后再继续操作。</div>
+      </div>
+    </div>
+    <div v-else-if="authExpiringSoon" style="padding: 12px 16px; margin-bottom: 16px; background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; display: flex; align-items: center; gap: 12px;">
+      <el-icon :size="20" style="color: var(--rs-warning);"><Warning /></el-icon>
+      <div>
+        <div style="font-weight: 600; color: var(--rs-warning); font-size: 13px;">授权即将到期</div>
+        <div style="font-size: 12px; color: var(--rs-text-secondary);">项目授权将于 {{ project.auth_end_date }} 到期，请及时联系客户确认续期。</div>
+      </div>
+    </div>
+
     <!-- Workflow Guide -->
-    <div v-if="project.asset_count === 0" class="card" style="padding: 16px; margin-bottom: 16px; border-left: 4px solid var(--rs-accent);">
+    <div v-if="project.asset_count === 0" class="card" style="padding: 20px; margin-bottom: 16px; border-left: 4px solid var(--rs-accent);">
       <h4 style="margin-bottom: 12px;">快速开始</h4>
-      <el-steps :active="workflowStep" finish-status="success" simple style="margin-bottom: 12px;">
-        <el-step title="添加资产" @click="$router.push(`/projects/${project.id}/assets`)" style="cursor: pointer;" />
-        <el-step title="配置引擎" @click="$router.push('/plugins')" style="cursor: pointer;" />
-        <el-step title="开始扫描" @click="$router.push(`/projects/${project.id}/scanning`)" style="cursor: pointer;" />
-      </el-steps>
+      <div style="font-size: 13px; color: var(--rs-text-secondary); margin-bottom: 16px;">添加扫描目标，一键开始扫描。</div>
+      <el-input v-model="quickTargets" type="textarea" :rows="3" placeholder="每行一个目标（IP/域名/URL/CIDR）&#10;例:&#10;192.168.1.0/24&#10;http://testphp.vulnweb.com" style="margin-bottom: 12px;" />
       <div style="display: flex; gap: 8px;">
-        <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/assets`)">添加资产 →</el-button>
+        <el-button type="primary" @click="quickStartScan" :loading="quickScanning" :disabled="!quickTargets.trim()">添加资产并开始扫描</el-button>
         <el-upload :action="`/api/v1/projects/${project.id}/import/csv-assets`" :headers="uploadHeaders" :on-success="onImportSuccess" :show-file-list="false" accept=".csv">
-          <el-button size="small">导入 CSV</el-button>
+          <el-button>导入 CSV</el-button>
         </el-upload>
       </div>
     </div>
@@ -111,9 +124,57 @@
           <el-table-column prop="title" label="报告名称" min-width="200" />
           <el-table-column prop="report_type" label="类型" width="100" />
           <el-table-column prop="format" label="格式" width="80" />
-          <el-table-column prop="generated_at" label="生成时间" width="180"><template #default="{ row }">{{ row.generated_at || '生成中...' }}</template></el-table-column>
+          <el-table-column prop="generated_at" label="生成时间" width="180"><template #default="{ row }">{{ row.generated_at?.replace('T', ' ').slice(0, 19) || '生成中...' }}</template></el-table-column>
+          <el-table-column label="操作" width="180">
+            <template #default="{ row }">
+              <template v-if="row.has_file">
+                <el-button size="small" @click.stop="previewReport(row.id)">预览</el-button>
+                <el-button size="small" type="primary" @click.stop="downloadReport(row.id)">下载</el-button>
+              </template>
+              <el-tag v-else-if="!row.generated_at" size="small" type="warning">生成中</el-tag>
+              <el-tag v-else size="small" type="info">文件不可用</el-tag>
+            </template>
+          </el-table-column>
         </el-table>
         <el-empty v-if="!reports.length" description="暂无报告" />
+
+        <!-- Report Preview Dialog -->
+        <el-dialog v-model="showReportPreview" title="报告预览" width="800px" top="5vh">
+          <div v-if="reportPreview" style="max-height: 70vh; overflow-y: auto;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <h2 style="font-size: 22px;">渗透测试报告</h2>
+              <div style="color: var(--rs-text-secondary); margin-top: 8px;">{{ reportPreview.project_name }}</div>
+              <div v-if="reportPreview.client_name" style="color: var(--rs-text-secondary);">客户: {{ reportPreview.client_name }}</div>
+              <div style="color: var(--rs-text-secondary); font-size: 12px; margin-top: 4px;">{{ reportPreview.generated_at?.replace('T', ' ').slice(0, 19) }}</div>
+            </div>
+
+            <h3 style="margin: 16px 0 12px; border-bottom: 1px solid var(--rs-border); padding-bottom: 8px;">一、测试概述</h3>
+            <p style="font-size: 13px; line-height: 1.8;">
+              本次渗透测试共发现 <strong>{{ reportPreview.summary.total }}</strong> 个安全漏洞，
+              其中严重 <span style="color: var(--rs-danger);">{{ reportPreview.summary.critical }}</span> 个，
+              高危 <span style="color: var(--rs-warning);">{{ reportPreview.summary.high }}</span> 个，
+              中危 {{ reportPreview.summary.medium }} 个，
+              低危 {{ reportPreview.summary.low }} 个。
+              测试资产总数: {{ reportPreview.summary.asset_count }} 个。
+            </p>
+
+            <h3 style="margin: 20px 0 12px; border-bottom: 1px solid var(--rs-border); padding-bottom: 8px;">二、漏洞详情</h3>
+            <div v-for="(f, i) in reportPreview.findings" :key="i" style="margin-bottom: 16px; padding: 12px; background: var(--rs-bg-secondary); border-radius: 8px; border-left: 3px solid" :style="{ borderLeftColor: {critical:'var(--rs-danger)',high:'var(--rs-warning)',medium:'var(--rs-accent)',low:'var(--rs-success)'}[f.severity] || 'var(--rs-border)' }">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <strong style="font-size: 14px;">{{ i + 1 }}. {{ f.title }}</strong>
+                <span class="severity-badge" :class="f.severity">{{ f.severity }}</span>
+              </div>
+              <div v-if="f.description" style="font-size: 13px; color: var(--rs-text-secondary); margin-bottom: 6px;">{{ f.description }}</div>
+              <div v-if="f.detail" style="font-size: 12px; margin-bottom: 6px;"><strong>复现步骤:</strong> <span style="color: var(--rs-text-secondary);">{{ f.detail.slice(0, 300) }}</span></div>
+              <div v-if="f.solution" style="font-size: 12px;"><strong>修复建议:</strong> <span style="color: var(--rs-text-secondary);">{{ f.solution.slice(0, 300) }}</span></div>
+            </div>
+            <div v-if="!reportPreview.findings.length" style="color: var(--rs-text-secondary); text-align: center; padding: 20px;">暂无漏洞数据</div>
+          </div>
+          <template #footer>
+            <el-button @click="showReportPreview = false">关闭</el-button>
+            <el-button type="primary" @click="downloadReport(previewReportId); showReportPreview = false">下载 Word</el-button>
+          </template>
+        </el-dialog>
       </el-tab-pane>
 
       <el-tab-pane label="工作Session" name="sessions">
@@ -204,34 +265,28 @@
         </el-dialog>
       </el-tab-pane>
 
-      <el-tab-pane label="作战管理" name="operations">
-        <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/operations`)">代理/凭据/主机/时间线/清理 →</el-button>
-      </el-tab-pane>
-
-      <el-tab-pane label="手工测试" name="testing">
-        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-          <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/testing`)">测试清单/Payload/笔记/分工 →</el-button>
-        </div>
-        <div style="color: var(--rs-text-secondary); font-size: 13px;">
-          包含：逻辑漏洞Checklist、Payload武器库、测试笔记、任务分工防撞车
-        </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="红蓝对抗" name="redblue">
-        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-          <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/redblue`)">护网计分板 →</el-button>
-        </div>
-        <div style="color: var(--rs-text-secondary); font-size: 13px;">
-          红蓝对抗演练计分、实时积分排名
-        </div>
-      </el-tab-pane>
-
-      <el-tab-pane label="LLM安全测试" name="llmtest">
-        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-          <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/llm-test`)">LLM OWASP Top 10 测试 →</el-button>
-        </div>
-        <div style="color: var(--rs-text-secondary); font-size: 13px;">
-          自动化测试 LLM 应用：Prompt注入、数据泄露、越权、幻觉检测等
+      <el-tab-pane label="作战 & 测试" name="operations">
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
+          <div class="card onboard-step" @click="$router.push(`/projects/${project.id}/operations`)">
+            <el-icon :size="28" style="margin-bottom: 8px; color: var(--rs-accent);"><Aim /></el-icon>
+            <div style="font-weight: bold;">作战管理</div>
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">代理/凭据/主机/时间线</div>
+          </div>
+          <div class="card onboard-step" @click="$router.push(`/projects/${project.id}/testing`)">
+            <el-icon :size="28" style="margin-bottom: 8px; color: var(--rs-warning);"><EditPen /></el-icon>
+            <div style="font-weight: bold;">手工测试</div>
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">Checklist/Payload/笔记</div>
+          </div>
+          <div class="card onboard-step" @click="$router.push(`/projects/${project.id}/redblue`)">
+            <el-icon :size="28" style="margin-bottom: 8px; color: var(--rs-danger);"><TrophyBase /></el-icon>
+            <div style="font-weight: bold;">红蓝对抗</div>
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">护网计分板</div>
+          </div>
+          <div class="card onboard-step" @click="$router.push(`/projects/${project.id}/llm-test`)">
+            <el-icon :size="28" style="margin-bottom: 8px; color: var(--rs-purple);"><MagicStick /></el-icon>
+            <div style="font-weight: bold;">LLM 安全测试</div>
+            <div style="font-size: 12px; color: var(--rs-text-secondary);">OWASP Top 10 自动化</div>
+          </div>
         </div>
       </el-tab-pane>
 
@@ -280,7 +335,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import api from '../stores/api'
@@ -291,6 +346,16 @@ const route = useRoute()
 const router = useRouter()
 const pid = route.params.id
 const project = ref(null)
+
+const authExpired = computed(() => {
+  if (!project.value?.auth_end_date) return false
+  return new Date(project.value.auth_end_date) < new Date()
+})
+const authExpiringSoon = computed(() => {
+  if (!project.value?.auth_end_date || authExpired.value) return false
+  const diff = new Date(project.value.auth_end_date) - new Date()
+  return diff < 7 * 24 * 60 * 60 * 1000
+})
 const activeTab = ref('assets')
 const workflowStep = ref(0)
 const reports = ref([])
@@ -323,19 +388,46 @@ const showRecordForm = ref(false)
 const recordForm = ref({ title: '', commands_text: '', duration_seconds: 0, is_playbook: false, playbook_name: '' })
 
 const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token')}` }
+const quickTargets = ref('')
+const quickScanning = ref(false)
+
+const quickStartScan = async () => {
+  const targets = quickTargets.value.split('\n').map(s => s.trim()).filter(Boolean)
+  if (!targets.length) return
+  quickScanning.value = true
+  try {
+    await api.post(`/projects/${pid}/scans`, {
+      task_name: `初始扫描 - ${new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`,
+      scan_strategy: 'standard',
+      targets,
+    })
+    ElMessage.success('扫描任务已创建')
+    router.push(`/projects/${pid}/scanning`)
+  } catch (e) {
+    const detail = e.response?.data?.detail
+    ElMessage.error(detail?.message || '创建扫描失败')
+  } finally { quickScanning.value = false }
+}
 
 onMounted(async () => {
-  project.value = await api.get(`/projects/${pid}`)
-  try { const res = await api.get(`/projects/${pid}/reports`); reports.value = res.items || [] } catch(e) {}
   try {
-    const res = await api.get(`/projects/${pid}/sessions`)
-    sessions.value = res.items || []
-    const active = sessions.value.find(s => s.status === 'active')
-    if (active) { activeSessionId.value = active.id; sessionStorage.setItem(`rs_active_session_${pid}`, active.id) }
-  } catch(e) {}
-  try { const res = await api.get(`/projects/${pid}/screenshots`); screenshots.value = res.items || [] } catch(e) {}
-  try { const res = await api.get(`/projects/${pid}/recordings`); recordings.value = res.items || [] } catch(e) {}
-  try { const res = await api.get(`/projects/${pid}/risk-acceptances`); riskAcceptances.value = res.items || [] } catch(e) {}
+    project.value = await api.get(`/projects/${pid}`)
+  } catch (e) {
+    ElMessage.error('项目加载失败，可能已被删除')
+    return
+  }
+  const loads = [
+    api.get(`/projects/${pid}/reports`).then(r => { reports.value = r.items || [] }).catch(() => {}),
+    api.get(`/projects/${pid}/sessions`).then(r => {
+      sessions.value = r.items || []
+      const active = sessions.value.find(s => s.status === 'active')
+      if (active) { activeSessionId.value = active.id; sessionStorage.setItem(`rs_active_session_${pid}`, active.id) }
+    }).catch(() => {}),
+    api.get(`/projects/${pid}/screenshots`).then(r => { screenshots.value = r.items || [] }).catch(() => {}),
+    api.get(`/projects/${pid}/recordings`).then(r => { recordings.value = r.items || [] }).catch(() => {}),
+    api.get(`/projects/${pid}/risk-acceptances`).then(r => { riskAcceptances.value = r.items || [] }).catch(() => {}),
+  ]
+  await Promise.all(loads)
 })
 
 const emergencyStop = async () => {
@@ -367,7 +459,19 @@ const runScoreRisks = async () => {
   ElMessage.success(res.message)
 }
 
-const exportFindings = () => { window.open(`/api/v1/projects/${pid}/export/findings-csv`, '_blank') }
+const exportFindings = () => { window.open(`/api/v1/projects/${pid}/export/findings-csv?token=${localStorage.getItem('token')}`, '_blank') }
+const downloadReport = (reportId) => { window.open(`/api/v1/projects/${pid}/reports/${reportId}/download?token=${localStorage.getItem('token')}`, '_blank') }
+
+const showReportPreview = ref(false)
+const reportPreview = ref(null)
+const previewReportId = ref(null)
+const previewReport = async (reportId) => {
+  previewReportId.value = reportId
+  try {
+    reportPreview.value = await api.get(`/projects/${pid}/reports/${reportId}/preview`)
+    showReportPreview.value = true
+  } catch (e) { ElMessage.error('预览加载失败') }
+}
 const exportArchive = async () => {
   const res = await api.get(`/projects/${pid}/export/archive`)
   const blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' })

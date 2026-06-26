@@ -31,11 +31,12 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" width="100">
+      <el-table-column prop="status" label="状态" width="120">
         <template #default="{ row }">
           <el-tag :type="{pending:'info',running:'warning',completed:'success',failed:'danger',stopped:'danger'}[row.status]" size="small">
-            {{ {pending:'等待中',running:'运行中',completed:'已完成',failed:'失败',stopped:'已停止'}[row.status] }}
+            {{ {pending:'排队中',running:'扫描中',completed:'已完成',failed:'失败',stopped:'已停止'}[row.status] }}
           </el-tag>
+          <div v-if="row.status === 'failed' && row.vulns_found === 0" style="font-size: 11px; color: var(--rs-danger); margin-top: 2px;">点击查看原因</div>
         </template>
       </el-table-column>
       <el-table-column prop="progress" label="进度" width="120">
@@ -92,12 +93,38 @@
           <div>结束: {{ detailScan.finished_at?.replace('T', ' ').slice(0, 19) || '进行中' }}</div>
         </div>
 
+        <!-- Engine Runs Detail -->
+        <div v-if="detailScan.engine_runs?.length" style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px;">引擎执行详情</h4>
+          <div v-for="r in detailScan.engine_runs" :key="r.id" style="padding: 10px; margin-bottom: 6px; background: var(--rs-bg-secondary); border-radius: 6px; border-left: 3px solid" :style="{ borderLeftColor: r.status === 'completed' ? 'var(--rs-success)' : r.status === 'failed' ? 'var(--rs-danger)' : 'var(--rs-warning)' }">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong style="font-size: 13px;">{{ r.engine_name }}</strong>
+              <el-tag :type="r.status === 'completed' ? 'success' : r.status === 'failed' ? 'danger' : 'warning'" size="small">{{ {completed:'完成',failed:'失败',running:'运行中'}[r.status] || r.status }}</el-tag>
+            </div>
+            <div v-if="r.vulns_found" style="font-size: 12px; color: var(--rs-danger); margin-top: 4px;">发现 {{ r.vulns_found }} 个漏洞</div>
+            <div v-if="r.error_message" style="font-size: 12px; color: var(--rs-warning); margin-top: 4px; white-space: pre-wrap;">{{ r.error_message }}</div>
+            <el-button v-if="r.runner_job_id" size="small" text style="margin-top: 4px; font-size: 11px;" @click="loadLogs(r.runner_job_id)">查看日志</el-button>
+          </div>
+        </div>
+        <div v-else-if="detailScan.status === 'completed' || detailScan.status === 'failed'" style="margin-top: 16px; padding: 12px; background: var(--rs-bg-secondary); border-radius: 6px; border-left: 3px solid var(--rs-warning);">
+          <div style="font-size: 13px; color: var(--rs-warning);">无引擎执行记录。可能原因: Celery Worker 未启动、插件未加载、或 scan-runner 服务未运行。</div>
+        </div>
+
         <div v-if="detailScan.vulns_found > 0" style="margin-top: 16px;">
           <el-button type="primary" size="small" @click="$router.push(`/projects/${pid}/findings`); showDetail = false">查看发现的漏洞 →</el-button>
+        </div>
+        <div v-else-if="detailScan.status === 'completed'" style="margin-top: 16px; padding: 12px; background: var(--rs-bg-secondary); border-radius: 6px; border-left: 3px solid var(--rs-warning);">
+          <div style="font-size: 13px; color: var(--rs-warning); margin-bottom: 4px;">扫描完成但未发现漏洞</div>
+          <div style="font-size: 12px; color: var(--rs-text-secondary);">可能原因：目标不可达、目标无已知漏洞、或扫描引擎配置问题。请检查上方引擎执行详情中的错误信息。</div>
         </div>
 
         <div v-if="detailScan.status === 'running'" style="margin-top: 16px;">
           <el-button type="danger" size="small" @click="stopScan(detailScan.id); showDetail = false">停止扫描</el-button>
+        </div>
+
+        <div v-if="scanLogs" style="margin-top: 16px;">
+          <h4 style="margin-bottom: 8px;">扫描日志</h4>
+          <pre style="font-size: 11px; background: var(--rs-bg-secondary); padding: 12px; border-radius: 6px; overflow: auto; max-height: 300px; white-space: pre-wrap; word-break: break-all;">{{ scanLogs }}</pre>
         </div>
       </div>
     </el-drawer>
@@ -107,13 +134,13 @@
       <el-form :model="form" label-width="100px">
         <el-form-item label="任务名称"><el-input v-model="form.task_name" placeholder="可选，自动生成" /></el-form-item>
         <el-form-item label="扫描策略">
-          <el-radio-group v-model="form.scan_strategy">
+          <el-radio-group v-model="form.scan_strategy" @change="onStrategyChange">
             <el-radio-button value="quick">快速扫描</el-radio-button>
             <el-radio-button value="standard">标准扫描</el-radio-button>
             <el-radio-button value="deep">深度扫描</el-radio-button>
           </el-radio-group>
           <div style="font-size: 12px; color: var(--rs-text-secondary); margin-top: 4px;">
-            {{ {quick:'仅端口扫描，速度最快',standard:'端口+指纹+漏洞匹配',deep:'全量扫描+POC验证，耗时较长'}[form.scan_strategy] }}
+            {{ {quick:'nmap 端口扫描，速度最快',standard:'nmap + nuclei 端口+漏洞扫描',deep:'nmap + nuclei + httpx + dirsearch 全量扫描，耗时较长'}[form.scan_strategy] }}
           </div>
         </el-form-item>
         <el-form-item label="扫描引擎">
@@ -155,7 +182,11 @@ const refreshing = ref(false)
 const availableEngines = ref([])
 const showDetail = ref(false)
 const detailScan = ref(null)
-const form = ref({ task_name: '', scan_strategy: 'standard', engines: [], targetsText: '' })
+const scanLogs = ref('')
+const form = ref({ task_name: '', scan_strategy: 'standard', engines: ['nmap', 'nuclei'], targetsText: '' })
+
+const strategyEngines = { quick: ['nmap'], standard: ['nmap', 'nuclei'], deep: ['nmap', 'nuclei', 'httpx', 'dirsearch'] }
+const onStrategyChange = () => { form.value.engines = [...(strategyEngines[form.value.scan_strategy] || [])] }
 
 let pollTimer = null
 
@@ -180,7 +211,7 @@ const createScan = async () => {
   creating.value = true
   try {
     const payload = {
-      task_name: form.value.task_name,
+      task_name: form.value.task_name || `${form.value.scan_strategy}扫描 - ${new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`,
       scan_strategy: form.value.scan_strategy,
       targets,
     }
@@ -211,11 +242,8 @@ const stopScan = async (id) => {
   await load()
 }
 
-const toggleDetail = (row) => {
-  // Future: expand row to show engine runs detail
-}
-
 const openDetail = async (row) => {
+  scanLogs.value = ''
   try {
     detailScan.value = await api.get(`/projects/${pid}/scans/${row.id}`)
   } catch {
@@ -224,10 +252,17 @@ const openDetail = async (row) => {
   showDetail.value = true
 }
 
+const loadLogs = async (jobId) => {
+  try {
+    const res = await api.get(`/projects/${pid}/scans/${detailScan.value.id}/logs/${jobId}`)
+    scanLogs.value = (res.stderr || '') + (res.stdout ? '\n--- stdout ---\n' + res.stdout : '')
+  } catch { scanLogs.value = '无法加载日志' }
+}
+
 onMounted(async () => {
   await Promise.all([load(), loadEngines()])
   pollTimer = setInterval(() => {
-    if (tasks.value.some(t => t.status === 'running')) load()
+    if (tasks.value.some(t => t.status === 'running' || t.status === 'pending')) load()
   }, 5000)
 })
 

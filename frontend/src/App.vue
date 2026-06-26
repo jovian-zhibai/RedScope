@@ -2,7 +2,7 @@
   <div v-if="$route.meta.noLayout"><router-view /></div>
   <div v-else class="layout">
     <aside class="sidebar">
-      <div class="logo">⚡ RedScope</div>
+      <div class="logo"><span style="color: var(--rs-danger); font-weight: 800;">RED</span><span style="opacity: 0.7;">SCOPE</span></div>
       <nav class="nav-menu">
         <router-link to="/" class="nav-item" active-class="active" exact>
           <el-icon><DataBoard /></el-icon> 总览
@@ -33,7 +33,7 @@
           <el-icon><EditPen /></el-icon> 手工测试
         </router-link>
 
-        <div class="nav-section">智能</div>
+        <div class="nav-section">智能分析</div>
         <router-link to="/ai" class="nav-item" active-class="active">
           <el-icon><MagicStick /></el-icon> AI 助手
         </router-link>
@@ -41,18 +41,18 @@
           <el-icon><Document /></el-icon> 漏洞情报
         </router-link>
 
-        <div class="nav-section">系统</div>
+        <div class="nav-section">平台管理</div>
         <router-link to="/plugins" class="nav-item" active-class="active">
-          <el-icon><SetUp /></el-icon> 工具管理
+          <el-icon><SetUp /></el-icon> 工具引擎
         </router-link>
         <router-link to="/workflow" class="nav-item" active-class="active">
-          <el-icon><Tickets /></el-icon> 工单管理
+          <el-icon><Tickets /></el-icon> 工单审批
         </router-link>
-        <router-link to="/users" class="nav-item" active-class="active">
-          <el-icon><User /></el-icon> 用户管理
+        <router-link to="/baseline" class="nav-item" active-class="active">
+          <el-icon><CircleCheck /></el-icon> 基线合规
         </router-link>
         <router-link to="/settings" class="nav-item" active-class="active">
-          <el-icon><Setting /></el-icon> 设置
+          <el-icon><Setting /></el-icon> 系统管理
         </router-link>
       </nav>
       <div style="padding: 12px 24px; border-top: 1px solid var(--rs-border); font-size: 11px; color: var(--rs-text-secondary);">
@@ -93,8 +93,8 @@
             <el-avatar :size="30" style="cursor: pointer; background: var(--rs-accent);">{{ userInitial }}</el-avatar>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="$router.push('/settings')">系统设置</el-dropdown-item>
-                <el-dropdown-item @click="$router.push('/settings?tab=profile')">个人信息</el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/profile')">个人设置</el-dropdown-item>
+                <el-dropdown-item @click="$router.push('/settings')">系统管理</el-dropdown-item>
                 <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>

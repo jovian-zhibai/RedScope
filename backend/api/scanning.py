@@ -90,7 +90,14 @@ async def create_scan(project_id: int, req: ScanCreate, _=Depends(require_projec
     cloud_warnings = check_cloud_compliance(req.targets)
 
     from backend.tasks.scan_worker import run_scan_task
-    run_scan_task.delay(task.id)
+    try:
+        run_scan_task.delay(task.id)
+    except Exception as e:
+        from backend.core.error_handler import logger
+        logger.warning(f"Celery dispatch failed ({e}), running scan synchronously")
+        import asyncio
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(None, run_scan_task, task.id)
 
     result = {"id": task.id, "status": "pending", "message": "扫描任务已创建并开始执行"}
     if cloud_warnings:
@@ -138,9 +145,16 @@ async def stop_scan(project_id: int, scan_id: int, _=Depends(require_project), d
 
 @router.get("/{scan_id}")
 async def get_scan(project_id: int, scan_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+    from backend.models.scan_task import EngineRun
     task = await db.get(ScanTask, scan_id)
     if not task or task.project_id != project_id:
         raise HTTPException(404, "任务不存在")
+
+    engine_runs_result = await db.execute(
+        select(EngineRun).where(EngineRun.scan_task_id == scan_id).order_by(EngineRun.started_at)
+    )
+    engine_runs = engine_runs_result.scalars().all()
+
     return {
         "id": task.id, "task_name": task.task_name, "scan_strategy": task.scan_strategy,
         "engines": task.engines, "status": task.status, "progress": task.progress,
@@ -149,4 +163,29 @@ async def get_scan(project_id: int, scan_id: int, _=Depends(require_project), db
         "target_assets": task.target_assets,
         "started_at": task.started_at.isoformat() if task.started_at else None,
         "finished_at": task.finished_at.isoformat() if task.finished_at else None,
+        "engine_runs": [
+            {"id": r.id, "engine_name": r.engine_name, "status": r.status,
+             "vulns_found": r.vulns_found, "error_message": r.error_message,
+             "runner_job_id": r.runner_job_id,
+             "started_at": r.started_at.isoformat() if r.started_at else None,
+             "finished_at": r.finished_at.isoformat() if r.finished_at else None}
+            for r in engine_runs
+        ],
     }
+
+
+@router.get("/{scan_id}/logs/{job_id}")
+async def get_scan_logs(project_id: int, scan_id: int, job_id: str, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+    task = await db.get(ScanTask, scan_id)
+    if not task or task.project_id != project_id:
+        raise HTTPException(404, "任务不存在")
+
+    from pathlib import Path
+    output_dir = Path("/app/output") / job_id
+    stderr_file = output_dir / "stderr.log"
+    stdout_file = output_dir / "stdout.log"
+
+    stderr = stderr_file.read_text(errors="replace")[:5000] if stderr_file.exists() else ""
+    stdout = stdout_file.read_text(errors="replace")[:5000] if stdout_file.exists() else ""
+
+    return {"stderr": stderr, "stdout": stdout}

@@ -2,47 +2,72 @@
   <div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
       <h2>漏洞管理</h2>
-      <el-select v-model="pid" placeholder="选择项目" size="small" style="width: 240px;" @change="load">
-        <el-option v-for="p in projects" :key="p.id" :value="p.id" :label="p.name" />
-      </el-select>
-    </div>
-    <div v-if="!pid" style="text-align: center; padding: 60px; color: var(--rs-text-secondary);">请先选择一个项目</div>
-    <div v-else>
-      <div style="margin-bottom: 12px;">
-        <el-button type="primary" size="small" @click="$router.push(`/projects/${pid}/findings`)">详细管理 →</el-button>
+      <div style="display: flex; gap: 8px;">
+        <el-select v-model="filterSev" placeholder="等级" clearable size="small" style="width: 100px;" @change="load">
+          <el-option value="critical" label="严重" /><el-option value="high" label="高危" />
+          <el-option value="medium" label="中危" /><el-option value="low" label="低危" />
+        </el-select>
+        <el-select v-model="filterStatus" placeholder="修复状态" clearable size="small" style="width: 120px;" @change="load">
+          <el-option value="unfixed" label="未修复" /><el-option value="fixing" label="修复中" />
+          <el-option value="fixed" label="已修复" />
+        </el-select>
       </div>
-      <div class="stat-grid">
-        <div class="stat-card critical"><div class="stat-label">严重</div><div class="stat-value">{{ stats.critical || 0 }}</div></div>
-        <div class="stat-card warning"><div class="stat-label">高危</div><div class="stat-value">{{ stats.high || 0 }}</div></div>
-        <div class="stat-card info"><div class="stat-label">中危</div><div class="stat-value">{{ stats.medium || 0 }}</div></div>
-        <div class="stat-card success"><div class="stat-label">已修复</div><div class="stat-value">{{ stats.fixed || 0 }}</div></div>
-      </div>
-      <el-table :data="findings" style="width: 100%;">
-        <el-table-column prop="title" label="漏洞" min-width="250" />
-        <el-table-column prop="severity" label="等级" width="80"><template #default="{ row }"><span class="severity-badge" :class="row.severity">{{ row.severity }}</span></template></el-table-column>
-        <el-table-column prop="fix_status" label="状态" width="100">
-          <template #default="{ row }"><el-tag :type="row.fix_status === 'fixed' ? 'success' : 'danger'" size="small">{{ {unfixed:'未修复',fixing:'修复中',fixed:'已修复'}[row.fix_status] }}</el-tag></template>
-        </el-table-column>
-      </el-table>
-      <el-pagination v-if="total > pageSize" :current-page="currentPage" :page-size="pageSize" :total="total" @current-change="(p) => { currentPage = p; load() }" layout="prev, pager, next, total" style="margin-top: 12px; justify-content: flex-end;" />
     </div>
+
+    <div class="stat-grid" style="margin-bottom: 16px;">
+      <div class="stat-card critical"><div class="stat-label">严重</div><div class="stat-value">{{ stats.critical || 0 }}</div></div>
+      <div class="stat-card" style="border-left: 3px solid var(--rs-warning);"><div class="stat-label">高危</div><div class="stat-value">{{ stats.high || 0 }}</div></div>
+      <div class="stat-card info"><div class="stat-label">总计</div><div class="stat-value">{{ stats.total || 0 }}</div></div>
+    </div>
+
+    <el-table :data="findings" style="width: 100%;" @row-click="goToFinding">
+      <el-table-column prop="project_name" label="项目" width="140" />
+      <el-table-column prop="title" label="漏洞名称" min-width="250" />
+      <el-table-column prop="severity" label="等级" width="80">
+        <template #default="{ row }"><span class="severity-badge" :class="row.severity">{{ row.severity }}</span></template>
+      </el-table-column>
+      <el-table-column prop="vuln_type" label="类型" width="110" />
+      <el-table-column prop="found_by" label="来源" width="100" />
+      <el-table-column prop="fix_status" label="修复状态" width="100">
+        <template #default="{ row }">
+          <el-tag :type="row.fix_status === 'fixed' ? 'success' : row.fix_status === 'fixing' ? 'warning' : 'danger'" size="small">
+            {{ {unfixed:'未修复', fixing:'修复中', fixed:'已修复', reopen:'复发'}[row.fix_status] || row.fix_status }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="created_at" label="发现时间" width="120">
+        <template #default="{ row }">{{ row.created_at?.split('T')[0] }}</template>
+      </el-table-column>
+    </el-table>
+    <el-empty v-if="!findings.length && !loading" description="暂无漏洞" />
   </div>
 </template>
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '../stores/api'
-const projects = ref([]); const pid = ref(null); const findings = ref([]); const stats = ref({})
-const total = ref(0); const currentPage = ref(1); const pageSize = ref(20)
-onMounted(async () => { try { const r = await api.get('/projects'); projects.value = r.items || [] } catch {} })
+
+const router = useRouter()
+const findings = ref([])
+const stats = ref({})
+const loading = ref(false)
+const filterSev = ref('')
+const filterStatus = ref('')
+
 const load = async () => {
-  if (!pid.value) return
+  loading.value = true
   try {
-    const [f, s] = await Promise.all([
-      api.get(`/projects/${pid.value}/findings`, { params: { page: currentPage.value, page_size: pageSize.value } }),
-      api.get(`/projects/${pid.value}/findings/stats`),
-    ])
-    findings.value = f.items || []; total.value = f.total || 0
-    stats.value = { ...s.severities, fixed: s.fixed }
-  } catch {}
+    const params = {}
+    if (filterSev.value) params.severity = filterSev.value
+    if (filterStatus.value) params.fix_status = filterStatus.value
+    const r = await api.get('/global/findings', { params })
+    findings.value = r.items || []
+    stats.value = r.stats || {}
+  } catch { findings.value = [] }
+  finally { loading.value = false }
 }
+
+const goToFinding = (row) => { router.push(`/projects/${row.project_id}/findings`) }
+
+onMounted(load)
 </script>

@@ -8,7 +8,7 @@ from backend.core.error_handler import global_exception_handler, request_logging
 from backend.core.rate_limiter import rate_limit_middleware
 from backend.core.audit_logger import audit_log_middleware
 from backend.database import get_db, init_db
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api import (
     auth, projects, scope, assets, scanning, findings, knowledge, plugins,
@@ -103,6 +103,218 @@ async def health_check():
     all_ok = status.get("database") == "ok" and status.get("redis") == "ok"
     status["status"] = "ok" if all_ok else "degraded"
     return status
+
+
+@app.get("/api/v1/dashboard/summary")
+async def dashboard_summary(request: Request, db: AsyncSession = Depends(get_db)):
+    from backend.models.project import Project
+    from backend.models.finding import Finding
+    from backend.models.scan_task import ScanTask
+
+    user_id = getattr(request.state, "user_id", 0)
+    role = getattr(request.state, "role", "viewer")
+    tenant_id = getattr(request.state, "tenant_id", None)
+
+    proj_query = select(Project).order_by(Project.updated_at.desc())
+    if role != "admin":
+        if tenant_id:
+            proj_query = proj_query.where((Project.tenant_id == tenant_id) | (Project.created_by == user_id))
+        else:
+            proj_query = proj_query.where(Project.created_by == user_id)
+
+    proj_result = await db.execute(proj_query)
+    projects = proj_result.scalars().all()
+    project_ids = [p.id for p in projects]
+
+    total_findings = 0
+    crit_high = 0
+    fixed = 0
+    if project_ids:
+        from sqlalchemy import case
+        total_findings = await db.scalar(
+            select(func.count()).where(Finding.project_id.in_(project_ids), Finding.deleted_at == None)
+        ) or 0
+        crit_high = await db.scalar(
+            select(func.count()).where(
+                Finding.project_id.in_(project_ids),
+                Finding.deleted_at == None,
+                Finding.severity.in_(["critical", "high"]),
+            )
+        ) or 0
+        fixed = await db.scalar(
+            select(func.count()).where(
+                Finding.project_id.in_(project_ids),
+                Finding.deleted_at == None,
+                Finding.fix_status == "fixed",
+            )
+        ) or 0
+
+    active_scans = []
+    if project_ids:
+        scan_result = await db.execute(
+            select(ScanTask).where(
+                ScanTask.project_id.in_(project_ids),
+                ScanTask.status.in_(["running", "pending"]),
+            )
+        )
+        active_scans = [
+            {"id": s.id, "task_name": s.task_name, "scan_strategy": s.scan_strategy,
+             "progress": s.progress, "project_id": s.project_id}
+            for s in scan_result.scalars().all()
+        ]
+
+    from backend.models.asset import Asset
+    projects_data = []
+    for p in projects[:10]:
+        asset_count = await db.scalar(select(func.count()).where(Asset.project_id == p.id, Asset.deleted_at == None)) or 0
+        finding_count = await db.scalar(select(func.count()).where(Finding.project_id == p.id, Finding.deleted_at == None)) or 0
+        projects_data.append({
+            "id": p.id, "name": p.name, "mode": p.mode, "status": p.status,
+            "client_name": p.client_name, "asset_count": asset_count, "finding_count": finding_count,
+        })
+
+    return {
+        "active_projects": len(projects),
+        "total_findings": total_findings,
+        "critical_high": crit_high,
+        "fix_rate": round(fixed / total_findings * 100) if total_findings > 0 else 0,
+        "active_scans": active_scans,
+        "recent_projects": projects_data,
+    }
+
+
+@app.get("/api/v1/global/scans")
+async def global_scans(request: Request, db: AsyncSession = Depends(get_db)):
+    from backend.models.project import Project
+    from backend.models.scan_task import ScanTask
+
+    user_id = getattr(request.state, "user_id", 0)
+    role = getattr(request.state, "role", "viewer")
+    tenant_id = getattr(request.state, "tenant_id", None)
+
+    proj_query = select(Project.id, Project.name)
+    if role != "admin":
+        if tenant_id:
+            proj_query = proj_query.where((Project.tenant_id == tenant_id) | (Project.created_by == user_id))
+        else:
+            proj_query = proj_query.where(Project.created_by == user_id)
+    proj_result = await db.execute(proj_query)
+    project_map = {pid: name for pid, name in proj_result.all()}
+
+    if not project_map:
+        return {"items": []}
+
+    scan_result = await db.execute(
+        select(ScanTask)
+        .where(ScanTask.project_id.in_(project_map.keys()))
+        .order_by(ScanTask.created_at.desc())
+        .limit(50)
+    )
+    tasks = scan_result.scalars().all()
+
+    return {"items": [
+        {
+            "id": t.id, "task_name": t.task_name, "scan_strategy": t.scan_strategy,
+            "engines": t.engines, "status": t.status, "progress": t.progress,
+            "total_targets": t.total_targets, "scanned_count": t.scanned_count,
+            "vulns_found": t.vulns_found, "project_id": t.project_id,
+            "project_name": project_map.get(t.project_id, ""),
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "finished_at": t.finished_at.isoformat() if t.finished_at else None,
+        }
+        for t in tasks
+    ]}
+
+
+@app.get("/api/v1/global/findings")
+async def global_findings(
+    request: Request, severity: str = None, fix_status: str = None,
+    db: AsyncSession = Depends(get_db),
+):
+    from backend.models.project import Project
+    from backend.models.finding import Finding
+
+    user_id = getattr(request.state, "user_id", 0)
+    role = getattr(request.state, "role", "viewer")
+    tenant_id = getattr(request.state, "tenant_id", None)
+
+    proj_query = select(Project.id, Project.name)
+    if role != "admin":
+        if tenant_id:
+            proj_query = proj_query.where((Project.tenant_id == tenant_id) | (Project.created_by == user_id))
+        else:
+            proj_query = proj_query.where(Project.created_by == user_id)
+    proj_result = await db.execute(proj_query)
+    project_map = {pid: name for pid, name in proj_result.all()}
+
+    if not project_map:
+        return {"items": [], "stats": {}}
+
+    query = select(Finding).where(Finding.project_id.in_(project_map.keys()), Finding.deleted_at == None)
+    if severity:
+        query = query.where(Finding.severity == severity)
+    if fix_status:
+        query = query.where(Finding.fix_status == fix_status)
+    query = query.order_by(Finding.severity, Finding.created_at.desc()).limit(100)
+
+    result = await db.execute(query)
+    findings = result.scalars().all()
+
+    total = await db.scalar(select(func.count()).where(Finding.project_id.in_(project_map.keys()), Finding.deleted_at == None)) or 0
+    crit = await db.scalar(select(func.count()).where(Finding.project_id.in_(project_map.keys()), Finding.deleted_at == None, Finding.severity == "critical")) or 0
+    high = await db.scalar(select(func.count()).where(Finding.project_id.in_(project_map.keys()), Finding.deleted_at == None, Finding.severity == "high")) or 0
+
+    return {
+        "items": [
+            {"id": f.id, "title": f.title, "severity": f.severity, "vuln_type": f.vuln_type,
+             "fix_status": f.fix_status, "found_by": f.found_by, "project_id": f.project_id,
+             "project_name": project_map.get(f.project_id, ""),
+             "created_at": f.created_at.isoformat() if f.created_at else None}
+            for f in findings
+        ],
+        "stats": {"total": total, "critical": crit, "high": high},
+    }
+
+
+@app.get("/api/v1/global/assets")
+async def global_assets(request: Request, search: str = None, db: AsyncSession = Depends(get_db)):
+    from backend.models.project import Project
+    from backend.models.asset import Asset
+
+    user_id = getattr(request.state, "user_id", 0)
+    role = getattr(request.state, "role", "viewer")
+    tenant_id = getattr(request.state, "tenant_id", None)
+
+    proj_query = select(Project.id, Project.name)
+    if role != "admin":
+        if tenant_id:
+            proj_query = proj_query.where((Project.tenant_id == tenant_id) | (Project.created_by == user_id))
+        else:
+            proj_query = proj_query.where(Project.created_by == user_id)
+    proj_result = await db.execute(proj_query)
+    project_map = {pid: name for pid, name in proj_result.all()}
+
+    if not project_map:
+        return {"items": [], "total": 0}
+
+    query = select(Asset).where(Asset.project_id.in_(project_map.keys()), Asset.deleted_at == None)
+    if search:
+        query = query.where(Asset.host.ilike(f"%{search}%"))
+    query = query.order_by(Asset.first_seen_at.desc()).limit(100)
+
+    result = await db.execute(query)
+    assets = result.scalars().all()
+    total = await db.scalar(select(func.count()).where(Asset.project_id.in_(project_map.keys()), Asset.deleted_at == None)) or 0
+
+    return {
+        "items": [
+            {"id": a.id, "host": a.host, "port": a.port, "application": a.application,
+             "server": a.server, "importance": a.importance, "is_alive": a.is_alive,
+             "project_id": a.project_id, "project_name": project_map.get(a.project_id, "")}
+            for a in assets
+        ],
+        "total": total,
+    }
 
 
 @app.get("/api/v1/search")

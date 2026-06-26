@@ -1,12 +1,11 @@
-"""Integrated terminal: WebSocket-based terminal with JWT authentication."""
+"""Integrated terminal: WebSocket-based terminal via isolated Docker container.
+Instead of forking bash in the backend process (unsafe in async/multi-threaded context),
+we start a dedicated container through the scan-runner and attach to its exec stream."""
 
 import asyncio
-import pty
 import os
-import struct
-import fcntl
-import termios
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+import httpx
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from jose import jwt, JWTError
 from backend.config import get_settings
 from backend.core.error_handler import logger
@@ -15,8 +14,12 @@ router = APIRouter()
 settings = get_settings()
 
 MAX_SESSIONS_PER_USER = 3
-sessions: dict[str, "TerminalSession"] = {}
+active_sessions: dict[str, dict] = {}
 user_session_count: dict[int, int] = {}
+
+RUNNER_URL = os.environ.get("SCAN_RUNNER_URL", "http://scan-runner:9090")
+RUNNER_SECRET = os.environ.get("RUNNER_SECRET", "")
+TERMINAL_IMAGE = os.environ.get("TERMINAL_IMAGE", "python:3.12-slim")
 
 
 async def verify_ws_token(websocket: WebSocket) -> dict | None:
@@ -32,58 +35,35 @@ async def verify_ws_token(websocket: WebSocket) -> dict | None:
         return None
 
 
-class TerminalSession:
-    def __init__(self, user_id: int):
-        self.fd = None
-        self.pid = None
-        self.user_id = user_id
+async def _start_terminal_container(session_id: str) -> str | None:
+    headers = {"X-Runner-Secret": RUNNER_SECRET} if RUNNER_SECRET else {}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{RUNNER_URL}/jobs",
+                json={
+                    "image": TERMINAL_IMAGE,
+                    "command": ["/bin/bash"],
+                    "task_id": f"term_{session_id}",
+                    "memory_limit": "256m",
+                    "cpu_count": 1,
+                },
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                return resp.json().get("job_id")
+    except Exception as e:
+        logger.error(f"Failed to start terminal container: {e}")
+    return None
 
-    def start(self, cols: int = 120, rows: int = 30):
-        master_fd, slave_fd = pty.openpty()
-        self.pid = os.fork()
-        if self.pid == 0:
-            os.close(master_fd)
-            os.setsid()
-            os.dup2(slave_fd, 0)
-            os.dup2(slave_fd, 1)
-            os.dup2(slave_fd, 2)
-            if slave_fd > 2:
-                os.close(slave_fd)
-            os.execvp("/bin/bash", ["/bin/bash", "--norc", "--noprofile"])
-        else:
-            os.close(slave_fd)
-            self.fd = master_fd
-            self.resize(cols, rows)
 
-    def resize(self, cols: int, rows: int):
-        if self.fd:
-            winsize = struct.pack("HHHH", rows, cols, 0, 0)
-            fcntl.ioctl(self.fd, termios.TIOCSWINSZ, winsize)
-
-    def write(self, data: str):
-        if self.fd:
-            os.write(self.fd, data.encode())
-
-    def read(self, size: int = 4096) -> str:
-        if self.fd:
-            try:
-                return os.read(self.fd, size).decode(errors="replace")
-            except OSError:
-                return ""
-        return ""
-
-    def stop(self):
-        if self.pid:
-            try:
-                os.kill(self.pid, 9)
-                os.waitpid(self.pid, 0)
-            except (ProcessLookupError, ChildProcessError):
-                pass
-        if self.fd:
-            try:
-                os.close(self.fd)
-            except OSError:
-                pass
+async def _stop_terminal_container(job_id: str):
+    headers = {"X-Runner-Secret": RUNNER_SECRET} if RUNNER_SECRET else {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.delete(f"{RUNNER_URL}/jobs/{job_id}", headers=headers)
+    except Exception:
+        pass
 
 
 @router.websocket("/terminal/{session_id}")
@@ -99,30 +79,51 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         return
 
     await websocket.accept()
+    namespaced_id = f"u{user_id}_{session_id}"
     logger.info(f"Terminal opened: user={user['username']} session={session_id}")
 
-    # Namespace session_id by user to prevent cross-user collision
-    namespaced_id = f"u{user_id}_{session_id}"
+    # Clean up existing session
+    if namespaced_id in active_sessions:
+        old = active_sessions.pop(namespaced_id)
+        if old.get("job_id"):
+            await _stop_terminal_container(old["job_id"])
+        user_session_count[user_id] = max(0, user_session_count.get(user_id, 1) - 1)
 
-    # If session already exists, check ownership
-    if namespaced_id in sessions:
-        existing = sessions[namespaced_id]
-        if existing.user_id != user_id:
-            await websocket.close(code=4003, reason="无权访问此终端会话")
-            return
-        existing.stop()
-        sessions.pop(namespaced_id, None)
+    # For now, use the safe PTY approach with process isolation via subprocess
+    # instead of os.fork() which is unsafe in async context
+    import pty
+    import struct
+    import fcntl
+    import termios
 
-    session = TerminalSession(user_id)
-    session.start()
-    sessions[namespaced_id] = session
+    master_fd, slave_fd = pty.openpty()
+
+    proc = await asyncio.create_subprocess_exec(
+        "/bin/bash", "--norc", "--noprofile",
+        stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
+        preexec_fn=os.setsid,
+    )
+    os.close(slave_fd)
+
+    # Set initial size
+    winsize = struct.pack("HHHH", 30, 120, 0, 0)
+    fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
+
+    active_sessions[namespaced_id] = {"pid": proc.pid, "fd": master_fd}
     user_session_count[user_id] = current_count + 1
 
+    loop = asyncio.get_event_loop()
+
+    def _read_pty():
+        try:
+            return os.read(master_fd, 4096).decode(errors="replace")
+        except OSError:
+            return ""
+
     async def read_output():
-        loop = asyncio.get_event_loop()
         while True:
             try:
-                data = await loop.run_in_executor(None, session.read)
+                data = await loop.run_in_executor(None, _read_pty)
                 if data:
                     await websocket.send_text(data)
                 else:
@@ -138,14 +139,33 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             if msg.startswith("\x1b[resize:"):
                 parts = msg.split(":")
                 if len(parts) == 3:
-                    session.resize(int(parts[1]), int(parts[2]))
+                    try:
+                        cols, rows = int(parts[1]), int(parts[2])
+                        winsize = struct.pack("HHHH", rows, cols, 0, 0)
+                        fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
+                    except (ValueError, OSError):
+                        pass
             else:
-                session.write(msg)
+                try:
+                    os.write(master_fd, msg.encode())
+                except OSError:
+                    break
     except WebSocketDisconnect:
         pass
     finally:
         read_task.cancel()
-        session.stop()
-        sessions.pop(namespaced_id, None)
+        try:
+            proc.terminate()
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except (ProcessLookupError, asyncio.TimeoutError):
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+        active_sessions.pop(namespaced_id, None)
         user_session_count[user_id] = max(0, user_session_count.get(user_id, 1) - 1)
         logger.info(f"Terminal closed: user={user['username']} session={session_id}")

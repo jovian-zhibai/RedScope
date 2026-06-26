@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from passlib.context import CryptContext
 from jose import jwt
@@ -58,6 +58,8 @@ async def _get_user_tenant_id(db, user_id: int) -> int | None:
 
 @router.post("/register", response_model=TokenResponse)
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    if not settings.allow_public_registration:
+        raise HTTPException(403, "注册已关闭，请联系管理员创建账号")
     if len(req.password) < 8:
         raise HTTPException(400, "密码长度不能少于8位")
     if req.password.isdigit() or req.password.isalpha():
@@ -149,6 +151,41 @@ async def change_password(req: ChangePasswordRequest, request: Request, db: Asyn
     return {"message": "密码修改成功"}
 
 
+class AdminCreateUserRequest(BaseModel):
+    username: str
+    password: str
+    display_name: str | None = None
+    role: str = "engineer"
+
+
+@router.post("/users")
+async def admin_create_user(req: AdminCreateUserRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    if request.state.role != "admin":
+        raise HTTPException(403, "仅管理员可创建用户")
+    if len(req.password) < 8:
+        raise HTTPException(400, "密码长度不能少于8位")
+    if len(req.username) < 3:
+        raise HTTPException(400, "用户名长度不能少于3位")
+
+    existing = await db.execute(select(User).where(User.username == req.username))
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "用户名已存在")
+
+    allowed_roles = {"admin", "manager", "leader", "engineer", "viewer"}
+    if req.role not in allowed_roles:
+        raise HTTPException(400, f"无效角色，允许: {', '.join(allowed_roles)}")
+
+    user = User(
+        username=req.username,
+        password_hash=pwd_context.hash(req.password),
+        display_name=req.display_name or req.username,
+        role=req.role,
+    )
+    db.add(user)
+    await db.flush()
+    return {"id": user.id, "username": user.username, "role": user.role, "message": "用户已创建"}
+
+
 @router.get("/users")
 async def list_users(request: Request, db: AsyncSession = Depends(get_db)):
     if request.state.role != "admin":
@@ -164,19 +201,36 @@ async def list_users(request: Request, db: AsyncSession = Depends(get_db)):
     ]}
 
 
+class AdminUpdateUserRequest(BaseModel):
+    role: str | None = None
+    is_active: bool | None = None
+    display_name: str | None = None
+
+
 @router.put("/users/{user_id}")
-async def admin_update_user(user_id: int, req: dict, request: Request, db: AsyncSession = Depends(get_db)):
+async def admin_update_user(user_id: int, req: AdminUpdateUserRequest, request: Request, db: AsyncSession = Depends(get_db)):
     if request.state.role != "admin":
         raise HTTPException(403, "仅管理员可操作")
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(404, "用户不存在")
-    if "role" in req:
-        user.role = req["role"]
-    if "is_active" in req:
-        user.is_active = req["is_active"]
-    if "display_name" in req:
-        user.display_name = req["display_name"]
+    if req.role is not None:
+        allowed_roles = {"admin", "manager", "leader", "engineer", "viewer"}
+        if req.role not in allowed_roles:
+            raise HTTPException(400, f"无效角色，允许: {', '.join(allowed_roles)}")
+        if user.role == "admin" and req.role != "admin":
+            admin_count = await db.scalar(select(func.count()).select_from(User).where(User.role == "admin", User.is_active == True))
+            if admin_count <= 1:
+                raise HTTPException(400, "至少需要保留一个活跃管理员，不能降权最后一位管理员")
+        user.role = req.role
+    if req.is_active is not None:
+        if not req.is_active and user.role == "admin":
+            admin_count = await db.scalar(select(func.count()).select_from(User).where(User.role == "admin", User.is_active == True))
+            if admin_count <= 1:
+                raise HTTPException(400, "不能禁用最后一位管理员")
+        user.is_active = req.is_active
+    if req.display_name is not None:
+        user.display_name = req.display_name
     await db.flush()
     return {"message": "更新成功"}
 
@@ -191,7 +245,7 @@ async def get_system_settings(request: Request, db: AsyncSession = Depends(get_d
     db_settings = {r.key: r.value for r in result.scalars().all()}
 
     return {
-        "llm_api_key": db_settings.get("llm_api_key", "***" + s.llm_api_key[-4:] if s.llm_api_key else ""),
+        "llm_api_key": "****" + s.llm_api_key[-4:] if s.llm_api_key and len(s.llm_api_key) > 8 else ("已配置" if s.llm_api_key else ""),
         "llm_base_url": db_settings.get("llm_base_url", s.llm_base_url),
         "llm_model": db_settings.get("llm_model", s.llm_model),
         "cors_origins": s.cors_origins,
@@ -210,10 +264,20 @@ async def update_system_settings(req: dict, request: Request, db: AsyncSession =
     from backend.models.operational import SystemSetting
 
     allowed_keys = {"llm_api_key", "llm_base_url", "llm_model", "notify_webhook_url", "notify_channel",
-                     "max_concurrent_scans", "max_targets_per_scan", "cors_origins", "nvd_api_key"}
+                     "max_concurrent_scans", "max_targets_per_scan", "nvd_api_key"}
+    VALID_CHANNELS = {"wecom", "dingtalk", "feishu", "slack", "telegram"}
     for key, value in req.items():
         if key not in allowed_keys:
             continue
+        if key == "notify_channel" and value not in VALID_CHANNELS:
+            raise HTTPException(400, f"无效的通知渠道: {value}")
+        if key in ("max_concurrent_scans", "max_targets_per_scan"):
+            try:
+                int_val = int(value)
+                if int_val < 1 or int_val > 10000:
+                    raise HTTPException(400, f"{key} 范围 1-10000")
+            except (ValueError, TypeError):
+                raise HTTPException(400, f"{key} 必须是整数")
         existing = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
         setting = existing.scalar_one_or_none()
         if setting:
@@ -246,7 +310,7 @@ async def test_llm_connection(request: Request, db: AsyncSession = Depends(get_d
         reply = await client.chat("你好", "回复'连接成功'四个字即可", temperature=0)
         return {"status": "ok", "reply": reply[:100]}
     except Exception as e:
-        return {"status": "failed", "error": str(e)[:200]}
+        return {"status": "failed", "error": "连接失败，请检查 API Key 和地址是否正确"}
 
 
 @router.get("/audit-logs")

@@ -9,10 +9,8 @@
     </div>
 
     <div class="stat-grid" style="margin-bottom: 16px;">
-      <div class="stat-card info"><div class="stat-label">总资产</div><div class="stat-value">{{ assets.length }}</div></div>
-      <div class="stat-card success"><div class="stat-label">存活</div><div class="stat-value">{{ assets.filter(a => a.is_alive).length }}</div></div>
-      <div class="stat-card warning"><div class="stat-label">范围内</div><div class="stat-value">{{ assets.filter(a => a.scope_status === 'in_scope').length }}</div></div>
-      <div class="stat-card critical"><div class="stat-label">核心资产</div><div class="stat-value">{{ assets.filter(a => a.importance === 'critical').length }}</div></div>
+      <div class="stat-card info"><div class="stat-label">总资产</div><div class="stat-value">{{ totalAssets }}</div></div>
+      <div class="stat-card success"><div class="stat-label">存活</div><div class="stat-value">{{ assetStats.alive || 0 }}</div></div>
     </div>
 
     <el-table :data="assets" style="width: 100%;" @row-click="openDetail">
@@ -122,6 +120,7 @@ const router = useRouter()
 const pid = route.params.id
 const assets = ref([])
 const totalAssets = ref(0)
+const assetStats = ref({})
 const showAdd = ref(false)
 const showDetail = ref(false)
 const detailAsset = ref(null)
@@ -141,9 +140,13 @@ const load = async () => {
   try {
     const params = { page: currentPage.value, page_size: pageSize.value }
     if (searchText.value) params.search = searchText.value
-    const res = await api.get(`/projects/${pid}/assets`, { params })
+    const [res, st] = await Promise.all([
+      api.get(`/projects/${pid}/assets`, { params }),
+      api.get(`/projects/${pid}/assets/stats`),
+    ])
     assets.value = res.items || []
     totalAssets.value = res.total || 0
+    assetStats.value = st
   } catch (e) { ElMessage.error('加载资产失败') }
 }
 
@@ -172,9 +175,13 @@ const quickScan = async (asset, strategy = 'quick') => {
       scan_strategy: strategy,
       targets: [asset.host + (asset.port ? `:${asset.port}` : '')],
     })
-    ElMessage.success('扫描任务已创建')
+    ElMessage.success('扫描任务已创建，即将跳转')
     showDetail.value = false
-  } catch (e) { ElMessage.error('创建扫描失败') }
+    router.push(`/projects/${pid}/scanning`)
+  } catch (e) {
+    const detail = e.response?.data?.detail
+    ElMessage.error(detail?.message || '创建扫描失败')
+  }
 }
 
 onMounted(load)

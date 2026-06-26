@@ -22,6 +22,50 @@ settings = get_settings()
 plugin_manager.load_all()
 
 
+STRATEGY_ENGINES = {
+    "quick": ["nmap"],
+    "standard": ["nmap", "nuclei"],
+    "deep": ["nmap", "nuclei", "httpx", "dirsearch"],
+    "passive": ["subfinder", "httpx"],
+}
+
+
+def _engines_for_strategy(strategy: str) -> list[str]:
+    return STRATEGY_ENGINES.get(strategy, STRATEGY_ENGINES["standard"])
+
+
+WEB_ENGINES = {"nuclei", "httpx", "dirsearch", "ffuf", "sqlmap", "whatweb", "wafw00f", "afrog"}
+PORT_ENGINES = {"nmap", "fscan"}
+
+
+def _build_params(target: str, engine_name: str) -> dict:
+    params = {"target": target, "url": target, "domain": target}
+
+    has_scheme = "://" in target
+    host = target
+    port = None
+
+    if not has_scheme and ":" in target:
+        h, _, p = target.rpartition(":")
+        if p.isdigit():
+            host = h
+            port = p
+
+    if engine_name in PORT_ENGINES:
+        params["target"] = host
+        params["domain"] = host
+        if port:
+            params["ports"] = port
+    elif engine_name in WEB_ENGINES:
+        if not has_scheme:
+            url = f"http://{target}"
+            params["target"] = url
+            params["url"] = url
+        params["domain"] = host
+
+    return params
+
+
 def _import_parser(parser_path: str):
     import importlib.util
     spec = importlib.util.spec_from_file_location("parser", parser_path)
@@ -55,13 +99,23 @@ async def _run_scan_task_async(task_self, scan_task_id: int):
         ).scalars().all()
         checker = BoundaryChecker(project, rules)
 
-        engines = task.engines or ["nuclei"]
+        engines = task.engines or _engines_for_strategy(task.scan_strategy)
         targets = task.target_assets or []
         total_vulns = 0
+        skipped_targets = []
+        total_steps = len(engines) * len(targets)
+        completed_steps = 0
 
-        for engine_name in engines:
+        for engine_idx, engine_name in enumerate(engines):
             plugin = plugin_manager.get_plugin(engine_name)
             if not plugin:
+                engine_run = EngineRun(
+                    scan_task_id=task.id, engine_name=engine_name, status="failed",
+                    started_at=datetime.now(), finished_at=datetime.now(),
+                    error_message=f"插件 '{engine_name}' 未找到，请检查插件是否已加载",
+                )
+                db.add(engine_run)
+                db.commit()
                 continue
 
             engine_run = EngineRun(
@@ -82,6 +136,11 @@ async def _run_scan_task_async(task_self, scan_task_id: int):
                 for i, target in enumerate(targets):
                     check = checker.check_target(target)
                     if not check.allowed:
+                        skipped_targets.append(f"{target}: {check.reason}")
+                        task.scanned_count = i + 1
+                        completed_steps += 1
+                        task.progress = int(completed_steps / total_steps * 100) if total_steps > 0 else 100
+                        db.commit()
                         continue
 
                     proxy_url = None
@@ -89,8 +148,11 @@ async def _run_scan_task_async(task_self, scan_task_id: int):
                     if route:
                         proxy_url = route.proxy_url
 
-                    params = {"target": target, "url": target, "domain": target}
+                    params = _build_params(target, engine_name)
                     result = await orchestrator.run_engine(plugin, params, proxy_url=proxy_url, task_id=f"{task.id}_{engine_name}_{i}")
+
+                    import logging
+                    logging.getLogger("scan_worker").info(f"[{engine_name}] target={target} success={result.success} output_path={result.output_path} error={result.error[:200] if result.error else ''}")
 
                     if result.job_id:
                         engine_run.runner_job_id = result.job_id
@@ -106,14 +168,23 @@ async def _run_scan_task_async(task_self, scan_task_id: int):
                         if critical_findings:
                             await _notify_critical_instant(critical_findings, task.task_name or f"扫描#{task.id}")
 
+                    if not result.success:
+                        engine_run.error_message = (engine_run.error_message or "") + (result.error or "")[:1000]
+
                     task.scanned_count = i + 1
-                    task.progress = int((i + 1) / len(targets) * 100)
+                    completed_steps += 1
+                    task.progress = int(completed_steps / total_steps * 100) if total_steps > 0 else 100
                     db.commit()
                     task_self.update_state(state="PROGRESS", meta={"progress": task.progress})
 
                 engine_run.status = "completed"
                 engine_run.vulns_found = engine_vulns
                 engine_run.finished_at = datetime.now()
+                # Always store stderr summary for debugging
+                if result.error and not engine_run.error_message:
+                    engine_run.error_message = result.error[:1000]
+                if skipped_targets:
+                    engine_run.error_message = (engine_run.error_message or "") + f"\n跳过 {len(skipped_targets)} 个目标: " + "; ".join(skipped_targets[:5])
 
             except Exception as e:
                 engine_run.status = "failed"

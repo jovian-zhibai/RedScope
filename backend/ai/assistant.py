@@ -49,7 +49,7 @@ NL_QUERY_PROMPT = """你是 RedScope 数据库查询助手。用户会用自然�
 不要输出 SQL 语句。不要加其他文字。"""
 
 
-async def chat_with_assistant(message: str, context: str = "") -> str:
+async def chat_with_assistant(message: str, context: str = "", history: list[dict] | None = None) -> str:
     client = get_llm_client()
     if not client.api_key:
         return "AI 助手未配置。请在 .env 中设置 LLM_API_KEY。"
@@ -58,7 +58,7 @@ async def chat_with_assistant(message: str, context: str = "") -> str:
     if context:
         user_msg = f"当前项目上下文：\n{context}\n\n用户问题：{message}"
 
-    return await client.chat(ASSISTANT_SYSTEM_PROMPT, user_msg)
+    return await client.chat(ASSISTANT_SYSTEM_PROMPT, user_msg, history=history)
 
 
 async def recommend_scan_strategy(asset_info: list[dict]) -> dict:

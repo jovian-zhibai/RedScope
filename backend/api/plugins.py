@@ -18,6 +18,7 @@ async def list_plugins():
             "description": p.description, "category": p.category,
             "docker_image": p.docker_image, "local_binary": p.local_binary,
             "proxy_supported": p.proxy.supported,
+            "is_enabled": True,
             "inputs": [{"name": i.name, "type": i.type, "required": i.required,
                         "default": i.default, "description": i.description, "options": i.options}
                        for i in p.inputs],
@@ -61,6 +62,15 @@ async def add_custom_plugin(req: dict, _=Depends(require_manager)):
     name = req.get("name", "").strip()
     if not name or not name.replace("-", "").replace("_", "").isalnum():
         raise HTTPException(400, "工具名称只能包含字母、数字、连字符和下划线")
+
+    command = req.get("command", "").strip()
+    if not command:
+        raise HTTPException(400, "执行命令不能为空")
+    dangerous_patterns = [";", "&&", "||", "|", "`", "$(", ">>", "<<", "rm ", "chmod ", "chown ", "curl ", "wget "]
+    cmd_lower = command.lower()
+    for pat in dangerous_patterns:
+        if pat in cmd_lower and pat not in ("{target}", "{url}", "{domain}", "{extra_args}", "{proxy_url}"):
+            raise HTTPException(400, f"命令模板包含危险字符: {pat}")
 
     plugin_dir = Path("/app/plugins/custom")
     plugin_dir.mkdir(parents=True, exist_ok=True)

@@ -160,7 +160,8 @@ const sendMessage = async (text) => {
 
   thinking.value = true
   try {
-    const res = await api.post('/ai/chat', { message: msg, project_id: projectId.value })
+    const history = messages.value.slice(-10).map(m => ({ role: m.role, content: m.content }))
+    const res = await api.post('/ai/chat', { message: msg, project_id: projectId.value, history })
     messages.value.push({ role: 'assistant', content: res.reply, time: new Date().toLocaleTimeString() })
   } catch (e) {
     messages.value.push({ role: 'assistant', content: 'AI 请求失败，请检查 LLM API 配置。', time: new Date().toLocaleTimeString() })

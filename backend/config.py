@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     notify_webhook_url: str = ""
     notify_channel: str = "wecom"
 
+    allow_public_registration: bool = False
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
     @model_validator(mode="after")

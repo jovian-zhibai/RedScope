@@ -14,9 +14,11 @@ from pydantic import BaseModel
 app = FastAPI(title="RedScope Scan Runner", version="1.0.0")
 
 SCAN_OUTPUT_BASE = os.environ.get("SCAN_OUTPUT_DIR", "/app/output")
+SCAN_OUTPUT_VOLUME = os.environ.get("SCAN_OUTPUT_VOLUME", "redscope_scan_output")
 ALLOWED_IMAGES_PREFIX = os.environ.get("ALLOWED_IMAGES", "").split(",") if os.environ.get("ALLOWED_IMAGES") else []
 RUNNER_SECRET = os.environ.get("RUNNER_SECRET", "")
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "10"))
+NUCLEI_TEMPLATES_VOL = "redscope_nuclei_templates"
 
 jobs: dict[str, dict] = {}
 _job_semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
@@ -36,6 +38,7 @@ class JobResponse(BaseModel):
     output_dir: str = ""
     error: str = ""
     exit_code: int = -1
+    stderr_summary: str = ""
 
 
 def _verify_secret(request):
@@ -79,21 +82,60 @@ async def create_job(req: JobRequest, request: Request):
                 client = docker.from_env(timeout=120)
                 container_name = f"rs_scan_{job_id}"
 
+                volumes = {SCAN_OUTPUT_VOLUME: {"bind": "/scan_output", "mode": "rw"}}
+
+                # Rewrite output paths in command: /output -> /scan_output/{job_id}
+                scan_subdir = f"/scan_output/{job_id}"
+                req.command = [arg.replace("/output", scan_subdir) for arg in req.command]
+
+                # Pre-create subdirectory in shared volume with open permissions
+                try:
+                    client.containers.run(
+                        image="alpine",
+                        command=["sh", "-c", f"mkdir -p {scan_subdir} && chmod 777 {scan_subdir}"],
+                        volumes={SCAN_OUTPUT_VOLUME: {"bind": "/scan_output", "mode": "rw"}},
+                        remove=True,
+                    )
+                except Exception:
+                    pass
+
+                is_nuclei = "nuclei" in req.image.lower()
+                if is_nuclei:
+                    try:
+                        client.volumes.get(NUCLEI_TEMPLATES_VOL)
+                    except docker.errors.NotFound:
+                        client.volumes.create(NUCLEI_TEMPLATES_VOL)
+                    volumes[NUCLEI_TEMPLATES_VOL] = {"bind": "/root/nuclei-templates", "mode": "rw"}
+
+                    if req.command and "-t" not in req.command:
+                        req.command.extend(["-t", "/root/nuclei-templates"])
+
+                # Strip duplicate command name if image has entrypoint
+                try:
+                    img = client.images.get(req.image)
+                    entrypoint = img.attrs.get("Config", {}).get("Entrypoint") or []
+                    if entrypoint and req.command:
+                        ep_bin = Path(entrypoint[0]).name
+                        if req.command[0] == ep_bin:
+                            req.command = req.command[1:]
+                except Exception:
+                    pass
+
+                print(f"[SCAN] image={req.image} command={req.command}", flush=True)
+
                 container = client.containers.run(
                     image=req.image,
                     command=req.command,
                     name=container_name,
                     detach=True,
-                    # SECURITY: host network required for nmap/masscan to work properly.
-                    # Scanned containers can access host network — mitigated by read_only + cap_drop ALL.
                     network_mode="host",
                     mem_limit=req.memory_limit,
                     cpu_count=req.cpu_count,
-                    read_only=True,
+                    read_only=not is_nuclei,
                     cap_drop=["ALL"],
                     cap_add=["NET_RAW"],
                     tmpfs={"/tmp": "", "/root/.config": "", "/root/.local": "", "/home": ""},
-                    volumes={str(output_dir.resolve()): {"bind": "/output", "mode": "rw"}},
+                    volumes=volumes,
                     auto_remove=False,
                 )
 
@@ -115,6 +157,7 @@ async def create_job(req: JobRequest, request: Request):
                     "exit_code": exit_code,
                     "output_dir": str(output_dir),
                     "error": stderr.decode(errors="replace")[:2000] if exit_code != 0 else "",
+                    "stderr_summary": stderr.decode(errors="replace")[:2000],
                     "finished_at": datetime.now().isoformat(),
                 })
 
@@ -142,6 +185,7 @@ async def get_job(job_id: str, request: Request):
         output_dir=job.get("output_dir", ""),
         error=job.get("error", ""),
         exit_code=job.get("exit_code", -1),
+        stderr_summary=job.get("stderr_summary", ""),
     )
 
 

@@ -2,12 +2,15 @@
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 try:
     import defusedxml.ElementTree as ET
 except ImportError:
     import xml.etree.ElementTree as ET
+
+logger = logging.getLogger("parsers")
 
 
 def _safe_parse_xml(file_path: str):
@@ -34,6 +37,15 @@ def parse_output(engine_name: str, output_format: str, output_dir: str, output_p
         return parse_generic(output_dir, output_path, output_format)
 
     full_path = str(Path(output_dir) / Path(output_path).name) if not Path(output_path).is_absolute() else output_path.replace("/output", output_dir)
+
+    p = Path(full_path)
+    if not p.exists():
+        logger.warning(f"[{engine_name}] Output file not found: {full_path}")
+        all_files = list(Path(output_dir).rglob("*")) if Path(output_dir).exists() else []
+        logger.warning(f"[{engine_name}] Files in output_dir: {[str(f) for f in all_files[:20]]}")
+        return []
+
+    logger.info(f"[{engine_name}] Parsing output: {full_path} ({p.stat().st_size} bytes)")
     return parser(full_path, output_dir)
 
 
@@ -73,8 +85,8 @@ def parse_nmap(file_path: str, output_dir: str) -> list[dict]:
                     "severity": "info",
                     "dedup_hash": _dedup_hash("nmap", addr, portid),
                 })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"[nmap] Parse failed for {file_path}: {e}", exc_info=True)
     return results
 
 
@@ -122,8 +134,8 @@ def parse_nuclei(file_path: str, output_dir: str) -> list[dict]:
                     "matched_cve": cve,
                     "dedup_hash": _dedup_hash("nuclei", host, template_id),
                 })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"[nuclei] Parse failed for {file_path}: {e}", exc_info=True)
     return results
 
 
@@ -142,8 +154,8 @@ def parse_subfinder(file_path: str, output_dir: str) -> list[dict]:
                         "severity": "info",
                         "dedup_hash": _dedup_hash("subfinder", domain),
                     })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"[subfinder] Parse failed for {file_path}: {e}", exc_info=True)
     return results
 
 
@@ -178,8 +190,8 @@ def parse_httpx(file_path: str, output_dir: str) -> list[dict]:
                     "severity": "info",
                     "dedup_hash": _dedup_hash("httpx", url),
                 })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"[httpx] Parse failed for {file_path}: {e}", exc_info=True)
     return results
 
 
@@ -201,8 +213,8 @@ def parse_sqlmap(file_path: str, output_dir: str) -> list[dict]:
                     "evidence": {"raw_log": content[:2000]},
                     "dedup_hash": _dedup_hash("sqlmap", parts),
                 })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"[sqlmap] Parse failed for {file_path}: {e}", exc_info=True)
     return results
 
 
@@ -236,8 +248,8 @@ def parse_dirsearch(file_path: str, output_dir: str) -> list[dict]:
                     "host": url,
                     "dedup_hash": _dedup_hash("dirsearch", url),
                 })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"[dirsearch] Parse failed for {file_path}: {e}", exc_info=True)
     return results
 
 
@@ -303,8 +315,8 @@ def parse_afrog(file_path: str, output_dir: str) -> list[dict]:
                     "host": url,
                     "dedup_hash": _dedup_hash("afrog", url, poc_id),
                 })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"[afrog] Parse failed for {file_path}: {e}", exc_info=True)
     return results
 
 
@@ -355,6 +367,6 @@ def parse_fscan(file_path: str, output_dir: str) -> list[dict]:
                         "found_by": "fscan",
                         "dedup_hash": _dedup_hash("fscan", line[:100]),
                     })
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"[fscan] Parse failed for {file_path}: {e}", exc_info=True)
     return results

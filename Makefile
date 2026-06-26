@@ -17,7 +17,25 @@ build:
 	docker compose build
 
 up:
-	docker compose up -d
+	docker compose up -d --build
+	@echo ""
+	@echo "================================================"
+	@echo "  RedScope 启动中，等待服务就绪..."
+	@echo "================================================"
+	@sleep 8
+	@echo ""
+	@if [ -f data/init-password ]; then \
+		echo "================================================"; \
+		cat data/init-password; \
+		echo "================================================"; \
+	fi
+	@echo ""
+	@echo "  访问地址: http://localhost:3000"
+	@echo "  API 地址: http://localhost:8000/docs"
+	@echo ""
+	@echo "  查看日志: docker compose logs -f backend"
+	@echo "  停止服务: make down"
+	@echo "================================================"
 
 down:
 	docker compose down
