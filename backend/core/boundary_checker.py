@@ -28,8 +28,6 @@ class BoundaryChecker:
             return BoundaryCheckResult(True)
 
         if self.project.mode == "range":
-            if self._is_public_ip(target):
-                return BoundaryCheckResult(False, f"靶场模式检测到公网IP: {target}，请确认是否有权测试")
             return BoundaryCheckResult(True)
 
         # Combat mode: strict checking

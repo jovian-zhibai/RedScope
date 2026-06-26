@@ -299,8 +299,23 @@ def _parse_results(db: Session, plugin: PluginConfig, output_dir: str, project_i
                 )
                 db.add(asset)
         else:
+            asset_id = None
+            host = f.get("host", "")
+            if host:
+                from urllib.parse import urlparse
+                parsed = urlparse(host) if "://" in host else urlparse(f"http://{host}")
+                lookup_host = parsed.hostname or host
+                lookup_port = parsed.port
+                asset_query = select(Asset).where(Asset.project_id == project_id, Asset.host == lookup_host)
+                if lookup_port:
+                    asset_query = asset_query.where(Asset.port == lookup_port)
+                matched_asset = db.execute(asset_query).scalars().first()
+                if matched_asset:
+                    asset_id = matched_asset.id
+
             finding = Finding(
                 project_id=project_id,
+                asset_id=asset_id,
                 title=f.get("title", "Unknown"),
                 vuln_type=f.get("vuln_type"),
                 severity=f.get("severity", "info"),

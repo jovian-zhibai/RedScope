@@ -113,3 +113,59 @@ async def add_custom_plugin(req: dict, _=Depends(require_manager)):
 
     plugin_manager.load_all()
     return {"name": name, "file": str(plugin_file)}
+
+
+@router.get("/export")
+async def export_plugins(_=Depends(require_manager)):
+    """Export all custom plugins as a JSON bundle for sharing."""
+    import yaml
+    from pathlib import Path
+
+    custom_dir = Path("/app/plugins/custom")
+    plugins_data = []
+    if custom_dir.exists():
+        for yaml_file in sorted(custom_dir.glob("*.yaml")):
+            with open(yaml_file) as f:
+                data = yaml.safe_load(f)
+            plugins_data.append({"filename": yaml_file.name, "content": data})
+
+    return {"version": "1.0", "count": len(plugins_data), "plugins": plugins_data}
+
+
+@router.post("/import")
+async def import_plugins(req: dict, _=Depends(require_manager)):
+    """Import plugins from a shared JSON bundle."""
+    import yaml
+    from pathlib import Path
+
+    plugins_data = req.get("plugins", [])
+    if not plugins_data:
+        raise HTTPException(400, "没有可导入的插件数据")
+
+    custom_dir = Path("/app/plugins/custom")
+    custom_dir.mkdir(parents=True, exist_ok=True)
+
+    imported = []
+    skipped = []
+    for p in plugins_data:
+        filename = p.get("filename", "")
+        content = p.get("content", {})
+        if not filename or not content:
+            continue
+
+        name = filename.replace(".yaml", "")
+        if not name.replace("-", "").replace("_", "").isalnum():
+            skipped.append(f"{name}: 名称不合法")
+            continue
+
+        plugin_file = custom_dir / filename
+        if plugin_file.exists():
+            skipped.append(f"{name}: 已存在")
+            continue
+
+        with open(plugin_file, "w") as f:
+            yaml.dump(content, f, allow_unicode=True, default_flow_style=False)
+        imported.append(name)
+
+    plugin_manager.load_all()
+    return {"imported": imported, "skipped": skipped, "total_loaded": len(plugin_manager.list_plugins())}

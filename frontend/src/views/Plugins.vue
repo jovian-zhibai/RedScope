@@ -7,6 +7,9 @@
           <el-option value="recon" label="侦察" /><el-option value="vuln_scan" label="漏扫" />
           <el-option value="brute" label="爆破" /><el-option value="fuzz" label="模糊" /><el-option value="custom" label="自定义" />
         </el-select>
+        <el-button size="small" @click="exportPlugins"><el-icon><Download /></el-icon> 导出</el-button>
+        <el-button size="small" @click="triggerImport"><el-icon><Upload /></el-icon> 导入</el-button>
+        <input ref="importFileRef" type="file" accept=".json" style="display: none;" @change="importPlugins" />
         <el-button size="small" @click="showAdd = true"><el-icon><Plus /></el-icon> 添加自定义工具</el-button>
         <el-button type="primary" size="small" @click="reloadPlugins"><el-icon><Refresh /></el-icon> 重新加载</el-button>
       </div>
@@ -98,6 +101,33 @@ const toolForm = ref({
 
 const load = async () => { const res = await api.get('/plugins'); plugins.value = res.items || [] }
 const reloadPlugins = async () => { const res = await api.post('/plugins/reload'); ElMessage.success(`已加载 ${res.count} 个插件`); await load() }
+
+const importFileRef = ref(null)
+const triggerImport = () => { importFileRef.value?.click() }
+
+const exportPlugins = async () => {
+  try {
+    const res = await api.get('/plugins/export')
+    const blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `redscope-plugins-${new Date().toISOString().slice(0,10)}.json`; a.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success(`已导出 ${res.count} 个自定义工具`)
+  } catch (e) { ElMessage.error('导出失败') }
+}
+
+const importPlugins = async (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+  try {
+    const text = await file.text()
+    const data = JSON.parse(text)
+    const res = await api.post('/plugins/import', data)
+    ElMessage.success(`导入完成: ${res.imported.length} 个成功${res.skipped.length ? ', ' + res.skipped.length + ' 个跳过' : ''}`)
+    await load()
+  } catch (e) { ElMessage.error('导入失败，请检查文件格式') }
+  event.target.value = ''
+}
 const togglePlugin = async (row) => {
   try { await api.put(`/plugins/${row.id || row.name}/toggle`); await load() }
   catch (e) { ElMessage.error('操作失败') }
