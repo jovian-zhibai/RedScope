@@ -114,9 +114,11 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../stores/api'
+import { useVersionPrefix } from '../composables/useVersionPrefix'
 
 const route = useRoute()
 const router = useRouter()
+const { p } = useVersionPrefix()
 const pid = route.params.id
 const assets = ref([])
 const totalAssets = ref(0)
@@ -177,7 +179,7 @@ const quickScan = async (asset, strategy = 'quick') => {
     })
     ElMessage.success('扫描任务已创建，即将跳转')
     showDetail.value = false
-    router.push(`/projects/${pid}/scanning`)
+    router.push(p(`/projects/${pid}/scanning`))
   } catch (e) {
     const detail = e.response?.data?.detail
     ElMessage.error(detail?.message || '创建扫描失败')

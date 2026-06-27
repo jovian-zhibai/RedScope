@@ -17,6 +17,9 @@
           <el-button type="primary" style="width: 100%; height: 44px; font-size: 15px;" @click="login" :loading="loading">登录</el-button>
         </el-form>
         <div class="login-footer">RedScope v1.1</div>
+        <div style="text-align: center; margin-top: 12px;">
+          <span style="font-size: 11px; color: var(--rs-text-secondary); cursor: pointer; opacity: 0.7;" @click="switchToV2">体验新版界面 ✨</span>
+        </div>
       </div>
     </div>
   </div>
@@ -48,6 +51,11 @@ const login = async () => {
     router.push(route.query.redirect || '/')
   } catch (e) { ElMessage.error(getErrorMsg(e, '登录失败')) }
   finally { loading.value = false }
+}
+
+const switchToV2 = () => {
+  localStorage.setItem('rs_ui_version', 'v2')
+  router.push('/v2/login')
 }
 </script>
 

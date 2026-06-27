@@ -90,11 +90,12 @@
         </div>
 
         <h4 style="margin: 16px 0 8px; color: var(--rs-text-primary);">修复状态</h4>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
           <el-button size="small" :type="detailFinding.fix_status === 'fixed' ? 'success' : ''" @click="updateStatus(detailFinding.id, 'fixed')">已修复</el-button>
           <el-button size="small" :type="detailFinding.fix_status === 'fixing' ? 'warning' : ''" @click="updateStatus(detailFinding.id, 'fixing')">修复中</el-button>
           <el-button size="small" :type="detailFinding.fix_status === 'unfixed' ? 'danger' : ''" @click="updateStatus(detailFinding.id, 'unfixed')">未修复</el-button>
           <el-button size="small" type="info" @click="showRiskAccept = true">客户接受风险</el-button>
+          <el-button size="small" @click="rescanFinding(detailFinding.id)" :loading="rescanning">一键复测</el-button>
         </div>
 
         <!-- Risk Acceptance -->
@@ -202,6 +203,16 @@ const riskForm = ref({ client_name: '', accepted_by: '', reason: '' })
 const findingScreenshots = ref([])
 const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token')}` }
 const aiGenerating = ref(false)
+const rescanning = ref(false)
+
+const rescanFinding = async (findingId) => {
+  rescanning.value = true
+  try {
+    const res = await api.post(`/projects/${pid}/findings/${findingId}/rescan`)
+    ElMessage.success(`复测任务已创建，目标: ${res.target}`)
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '复测失败') }
+  finally { rescanning.value = false }
+}
 
 const previewImage = (url) => { window.open(url, '_blank') }
 

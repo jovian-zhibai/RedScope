@@ -1,7 +1,8 @@
 <template>
   <div v-if="$route.meta.noLayout"><router-view /></div>
+  <div v-else-if="$route.path.startsWith('/v2')"><router-view /></div>
   <div v-else class="layout">
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{ open: sidebarOpen }">
       <div class="logo"><span style="color: var(--rs-danger); font-weight: 800;">RED</span><span style="opacity: 0.7;">SCOPE</span></div>
       <nav class="nav-menu">
         <router-link to="/" class="nav-item" active-class="active" exact>
@@ -12,44 +13,33 @@
         <router-link to="/projects" class="nav-item" active-class="active">
           <el-icon><FolderOpened /></el-icon> 项目管理
         </router-link>
-        <router-link to="/assets" class="nav-item" active-class="active">
-          <el-icon><Monitor /></el-icon> 资产管理
-        </router-link>
         <router-link to="/scans" class="nav-item" active-class="active">
           <el-icon><VideoPlay /></el-icon> 扫描任务
         </router-link>
         <router-link to="/vulns" class="nav-item" active-class="active">
           <el-icon><Warning /></el-icon> 漏洞管理
         </router-link>
-
-        <div class="nav-section">红队作战</div>
-        <router-link to="/warroom" class="nav-item" active-class="active">
-          <el-icon><Aim /></el-icon> 作战管理
-        </router-link>
-        <router-link to="/redblue" class="nav-item" active-class="active">
-          <el-icon><TrophyBase /></el-icon> 红蓝对抗
-        </router-link>
-        <router-link to="/testing" class="nav-item" active-class="active">
-          <el-icon><EditPen /></el-icon> 手工测试
+        <router-link to="/assets" class="nav-item" active-class="active">
+          <el-icon><Monitor /></el-icon> 资产管理
         </router-link>
 
-        <div class="nav-section">智能分析</div>
+        <div class="nav-section">工具</div>
         <router-link to="/ai" class="nav-item" active-class="active">
           <el-icon><MagicStick /></el-icon> AI 助手
         </router-link>
         <router-link to="/knowledge" class="nav-item" active-class="active">
           <el-icon><Document /></el-icon> 漏洞情报
         </router-link>
-
-        <div class="nav-section">平台管理</div>
         <router-link to="/plugins" class="nav-item" active-class="active">
           <el-icon><SetUp /></el-icon> 工具引擎
         </router-link>
-        <router-link to="/workflow" class="nav-item" active-class="active">
-          <el-icon><Tickets /></el-icon> 工单审批
-        </router-link>
         <router-link to="/baseline" class="nav-item" active-class="active">
           <el-icon><CircleCheck /></el-icon> 基线合规
+        </router-link>
+
+        <div class="nav-section">系统</div>
+        <router-link to="/workflow" class="nav-item" active-class="active">
+          <el-icon><Tickets /></el-icon> 工单审批
         </router-link>
         <router-link to="/settings" class="nav-item" active-class="active">
           <el-icon><Setting /></el-icon> 系统管理
@@ -59,9 +49,13 @@
         RedScope v1.1
       </div>
     </aside>
+    <div v-if="sidebarOpen" class="sidebar-overlay" @click="sidebarOpen = false"></div>
     <div class="main-content">
       <header class="topbar">
-        <span style="color: var(--rs-text-secondary); font-size: 13px;">{{ $route.meta.title }}</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <el-button class="mobile-menu-btn" size="small" text @click="sidebarOpen = !sidebarOpen" style="display: none;">☰</el-button>
+          <span style="color: var(--rs-text-secondary); font-size: 13px;">{{ $route.meta.title }}</span>
+        </div>
         <div style="display: flex; align-items: center; gap: 12px;">
           <div style="position: relative;">
             <el-input v-model="searchQuery" placeholder="搜索项目/漏洞/资产... (Ctrl+K)" size="small" style="width: 300px;" :prefix-icon="Search" @input="onSearch" @focus="showSearchResults = true" @blur="hideSearch" />
@@ -95,7 +89,8 @@
               <el-dropdown-menu>
                 <el-dropdown-item @click="$router.push('/profile')">个人设置</el-dropdown-item>
                 <el-dropdown-item @click="$router.push('/settings')">系统管理</el-dropdown-item>
-                <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
+                <el-dropdown-item divided @click="switchToV2">体验新版 ✨</el-dropdown-item>
+                <el-dropdown-item @click="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -142,6 +137,11 @@
         ▲ 终端 (Ctrl+`)
       </div>
     </div>
+
+    <!-- V2 版本切换按钮 -->
+    <div style="position:fixed;bottom:40px;right:20px;z-index:1000;padding:8px 16px;border-radius:4px;background:var(--rs-bg-card);border:1px solid var(--rs-border);color:var(--rs-text-secondary);font-family:monospace;font-size:11px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);" @click="switchToV2">
+      体验新版 →
+    </div>
   </div>
 </template>
 
@@ -155,6 +155,7 @@ import api from './stores/api'
 
 const router = useRouter()
 const showTerminal = ref(false)
+const sidebarOpen = ref(false)
 const isDark = ref(localStorage.getItem('rs_theme') !== 'light')
 
 const toggleTheme = () => {
@@ -203,6 +204,7 @@ const onSearch = () => {
 const hideSearch = () => { setTimeout(() => { showSearchResults.value = false }, 200) }
 const goTo = (path) => { showSearchResults.value = false; searchQuery.value = ''; router.push(path) }
 const logout = () => { localStorage.removeItem('token'); router.push('/login') }
+const switchToV2 = () => { localStorage.setItem('rs_ui_version', 'v2'); router.push('/v2') }
 
 const quickCreateProject = async () => {
   if (!quickForm.value.name) { ElMessage.warning('请输入项目名称'); return }

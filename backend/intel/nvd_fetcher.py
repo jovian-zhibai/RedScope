@@ -1,7 +1,7 @@
 """NVD/CVE vulnerability fetcher: syncs latest CVEs from NVD API."""
 
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from backend.database_sync import SyncSession
 from backend.models.vuln_knowledge import VulnKnowledge
@@ -11,8 +11,8 @@ NVD_API = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
 def fetch_latest(days: int = 7, keyword: str = ""):
     params = {
-        "pubStartDate": (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00.000"),
-        "pubEndDate": datetime.utcnow().strftime("%Y-%m-%dT23:59:59.999"),
+        "pubStartDate": (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00.000"),
+        "pubEndDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT23:59:59.999"),
         "resultsPerPage": 100,
     }
     if keyword:

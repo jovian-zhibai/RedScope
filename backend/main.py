@@ -173,6 +173,24 @@ async def dashboard_summary(request: Request, db: AsyncSession = Depends(get_db)
             "client_name": p.client_name, "asset_count": asset_count, "finding_count": finding_count,
         })
 
+    recent_findings_data = []
+    if project_ids:
+        project_name_map = {p.id: p.name for p in projects}
+        findings_result = await db.execute(
+            select(Finding).where(
+                Finding.project_id.in_(project_ids), Finding.deleted_at == None
+            ).order_by(Finding.created_at.desc()).limit(10)
+        )
+        for f in findings_result.scalars().all():
+            host = None
+            if f.asset_id:
+                host = await db.scalar(select(Asset.host).where(Asset.id == f.asset_id))
+            recent_findings_data.append({
+                "id": f.id, "title": f.title, "severity": f.severity,
+                "host": host, "found_by": f.found_by, "project_id": f.project_id,
+                "project_name": project_name_map.get(f.project_id, ""),
+            })
+
     return {
         "active_projects": len(projects),
         "total_findings": total_findings,
@@ -180,6 +198,7 @@ async def dashboard_summary(request: Request, db: AsyncSession = Depends(get_db)
         "fix_rate": round(fixed / total_findings * 100) if total_findings > 0 else 0,
         "active_scans": active_scans,
         "recent_projects": projects_data,
+        "recent_findings": recent_findings_data,
     }
 
 

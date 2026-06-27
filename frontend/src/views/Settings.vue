@@ -189,20 +189,20 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../stores/api'
 
 const activeTab = ref('system')
 
-const isAdmin = computed(() => {
+const isAdmin = ref(false)
+
+const loadCurrentUser = async () => {
   try {
-    const token = localStorage.getItem('token')
-    if (!token) return false
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return payload.role === 'admin'
-  } catch { return false }
-})
+    const user = await api.get('/auth/me')
+    isAdmin.value = user.role === 'admin'
+  } catch { isAdmin.value = false }
+}
 
 // System config
 const sysConfig = ref({})
@@ -306,6 +306,7 @@ const testWebhook = async () => {
 }
 
 onMounted(async () => {
+  await loadCurrentUser()
   if (isAdmin.value) {
     try { sysConfig.value = await api.get('/auth/settings/system') } catch {}
     await Promise.all([loadUsers(), loadTenants(), loadLogs()])

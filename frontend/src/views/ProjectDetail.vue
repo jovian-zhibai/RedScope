@@ -1,9 +1,12 @@
 <template>
   <div v-if="project">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
       <div>
-        <h2>{{ project.name }}</h2>
-        <div style="color: var(--rs-text-secondary); font-size: 13px; margin-top: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <el-button text size="small" @click="$router.push(p('/projects'))" style="color: var(--rs-text-secondary);">← 项目列表</el-button>
+          <h2 style="margin: 0;">{{ project.name }}</h2>
+        </div>
+        <div style="color: var(--rs-text-secondary); font-size: 13px; margin-top: 4px; margin-left: 80px;">
           {{ project.client_name }} ·
           <span class="severity-badge" :class="project.mode === 'combat' ? 'critical' : project.mode === 'range' ? 'medium' : 'low'">
             {{ {combat: '实战', range: '靶场', research: '研究'}[project.mode] }}
@@ -12,9 +15,8 @@
         </div>
       </div>
       <div style="display: flex; gap: 8px;">
-        <el-button size="small" @click="saveAsTemplate">保存为模板</el-button>
-        <el-button size="small" @click="cloneProject" :loading="cloning">克隆项目</el-button>
-        <el-button type="danger" plain @click="emergencyStop">紧急停止</el-button>
+        <el-button size="small" @click="cloneProject" :loading="cloning">克隆</el-button>
+        <el-button type="danger" plain size="small" @click="emergencyStop">紧急停止</el-button>
       </div>
     </div>
 
@@ -55,7 +57,7 @@
     <el-tabs v-model="activeTab">
       <el-tab-pane label="资产" name="assets">
         <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-          <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/assets`)">管理资产 →</el-button>
+          <el-button type="primary" size="small" @click="$router.push(p(`/projects/${project.id}/assets`))">管理资产 →</el-button>
           <el-upload :action="`/api/v1/projects/${project.id}/import/csv-assets`" :headers="uploadHeaders" :on-success="onImportSuccess" :show-file-list="false" accept=".csv">
             <el-button size="small">导入CSV资产</el-button>
           </el-upload>
@@ -67,7 +69,7 @@
 
       <el-tab-pane label="扫描" name="scanning">
         <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-          <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/scanning`)">扫描任务 →</el-button>
+          <el-button type="primary" size="small" @click="$router.push(p(`/projects/${project.id}/scanning`))">扫描任务 →</el-button>
           <el-button size="small" @click="showPipeline = true">运行流水线</el-button>
           <el-button size="small" @click="runVulnMatch" :loading="matching">被动漏洞匹配</el-button>
           <el-button size="small" @click="runOpsecCheck" :loading="opsecChecking">OPSEC 预检</el-button>
@@ -81,7 +83,7 @@
 
       <el-tab-pane label="漏洞" name="findings">
         <div style="display: flex; gap: 8px; margin-bottom: 16px;">
-          <el-button type="primary" size="small" @click="$router.push(`/projects/${project.id}/findings`)">漏洞列表 →</el-button>
+          <el-button type="primary" size="small" @click="$router.push(p(`/projects/${project.id}/findings`))">漏洞列表 →</el-button>
           <el-button size="small" @click="runDedup">去重合并</el-button>
           <el-button size="small" @click="runScoreRisks">重算风险评分</el-button>
           <el-button size="small" @click="exportFindings">导出漏洞CSV</el-button>
@@ -267,22 +269,22 @@
 
       <el-tab-pane label="作战 & 测试" name="operations">
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
-          <div class="card onboard-step" @click="$router.push(`/projects/${project.id}/operations`)">
+          <div class="card onboard-step" @click="$router.push(p(`/projects/${project.id}/operations`))">
             <el-icon :size="28" style="margin-bottom: 8px; color: var(--rs-accent);"><Aim /></el-icon>
             <div style="font-weight: bold;">作战管理</div>
             <div style="font-size: 12px; color: var(--rs-text-secondary);">代理/凭据/主机/时间线</div>
           </div>
-          <div class="card onboard-step" @click="$router.push(`/projects/${project.id}/testing`)">
+          <div class="card onboard-step" @click="$router.push(p(`/projects/${project.id}/testing`))">
             <el-icon :size="28" style="margin-bottom: 8px; color: var(--rs-warning);"><EditPen /></el-icon>
             <div style="font-weight: bold;">手工测试</div>
             <div style="font-size: 12px; color: var(--rs-text-secondary);">Checklist/Payload/笔记</div>
           </div>
-          <div class="card onboard-step" @click="$router.push(`/projects/${project.id}/redblue`)">
+          <div class="card onboard-step" @click="$router.push(p(`/projects/${project.id}/redblue`))">
             <el-icon :size="28" style="margin-bottom: 8px; color: var(--rs-danger);"><TrophyBase /></el-icon>
             <div style="font-weight: bold;">红蓝对抗</div>
             <div style="font-size: 12px; color: var(--rs-text-secondary);">护网计分板</div>
           </div>
-          <div class="card onboard-step" @click="$router.push(`/projects/${project.id}/llm-test`)">
+          <div class="card onboard-step" @click="$router.push(p(`/projects/${project.id}/llm-test`))">
             <el-icon :size="28" style="margin-bottom: 8px; color: var(--rs-purple);"><MagicStick /></el-icon>
             <div style="font-weight: bold;">LLM 安全测试</div>
             <div style="font-size: 12px; color: var(--rs-text-secondary);">OWASP Top 10 自动化</div>
@@ -341,9 +343,11 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 import api from '../stores/api'
 import ScopeManager from '../components/ScopeManager.vue'
 import NetworkTopology from '../components/NetworkTopology.vue'
+import { useVersionPrefix } from '../composables/useVersionPrefix'
 
 const route = useRoute()
 const router = useRouter()
+const { p } = useVersionPrefix()
 const pid = route.params.id
 const project = ref(null)
 
@@ -402,7 +406,7 @@ const quickStartScan = async () => {
       targets,
     })
     ElMessage.success('扫描任务已创建')
-    router.push(`/projects/${pid}/scanning`)
+    router.push(p(`/projects/${pid}/scanning`))
   } catch (e) {
     const detail = e.response?.data?.detail
     ElMessage.error(detail?.message || '创建扫描失败')
@@ -541,7 +545,7 @@ const cloneProject = async () => {
   try {
     const res = await api.post(`/auth/projects/${pid}/clone`)
     ElMessage.success(`项目已克隆: ${res.name}`)
-    router.push(`/projects/${res.id}`)
+    router.push(p(`/projects/${res.id}`))
   } catch (e) { ElMessage.error('克隆失败') }
   finally { cloning.value = false }
 }

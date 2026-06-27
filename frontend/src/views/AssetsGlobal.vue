@@ -29,8 +29,10 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../stores/api'
+import { useVersionPrefix } from '../composables/useVersionPrefix'
 
 const router = useRouter()
+const { p } = useVersionPrefix()
 const assets = ref([])
 const total = ref(0)
 const loading = ref(false)
@@ -54,7 +56,7 @@ const onSearch = () => {
   searchTimer = setTimeout(load, 300)
 }
 
-const goToAsset = (row) => { router.push(`/projects/${row.project_id}/assets`) }
+const goToAsset = (row) => { router.push(p(`/projects/${row.project_id}/assets`)) }
 
 onMounted(load)
 </script>

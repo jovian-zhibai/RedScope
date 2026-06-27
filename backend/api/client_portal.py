@@ -84,10 +84,10 @@ async def client_login(req: ClientLogin, db: AsyncSession = Depends(get_db)):
     if not account or not pwd_context.verify(req.password, account.password_hash):
         raise HTTPException(401, "用户名或密码错误")
 
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
     token = jwt.encode(
         {"sub": str(account.id), "project_id": account.project_id, "type": "client",
-         "exp": datetime.utcnow() + timedelta(hours=24)},
+         "exp": datetime.now(timezone.utc) + timedelta(hours=24)},
         settings.secret_key, algorithm=settings.algorithm,
     )
     return {"access_token": token, "client_name": account.client_name, "project_id": account.project_id}

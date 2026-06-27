@@ -72,11 +72,9 @@ async def match_project_vulns(project_id: int, _=Depends(require_project), db: A
 
 @router.post("/projects/{project_id}/dedup")
 async def dedup_project_findings(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
-    from backend.core.dedup import dedup_findings
-    from backend.database_sync import SyncSession as SS
+    from backend.core.dedup import dedup_findings_async
 
-    with SS() as sync_db:
-        result = dedup_findings(sync_db, project_id)
+    result = await dedup_findings_async(db, project_id)
 
     return result
 

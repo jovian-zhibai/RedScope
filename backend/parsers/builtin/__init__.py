@@ -112,18 +112,27 @@ def parse_nuclei(file_path: str, output_dir: str) -> list[dict]:
                 tags = info.get("tags", [])
                 reference = info.get("reference", [])
                 matcher_name = item.get("matcher-name", "")
+                classification = info.get("classification", {})
+                cvss_score = classification.get("cvss-score") or classification.get("cvss_score")
                 cve = ""
                 for tag in (tags if isinstance(tags, list) else tags.split(",")):
                     if tag.upper().startswith("CVE-"):
                         cve = tag.upper()
                         break
+                if not cve and classification.get("cve-id"):
+                    cve_ids = classification["cve-id"]
+                    if isinstance(cve_ids, list) and cve_ids:
+                        cve = cve_ids[0].upper()
+                    elif isinstance(cve_ids, str):
+                        cve = cve_ids.upper()
 
                 results.append({
                     "title": f"{name} - {host}",
                     "vuln_type": _guess_vuln_type(tags, name),
                     "severity": severity,
+                    "cvss_score": float(cvss_score) if cvss_score else None,
                     "description": desc,
-                    "detail": f"Template: {template_id}\nMatcher: {matcher_name}\nHost: {host}",
+                    "detail": f"Template: {template_id}\nMatcher: {matcher_name}\nHost: {host}\nCVE: {cve}" if cve else f"Template: {template_id}\nMatcher: {matcher_name}\nHost: {host}",
                     "solution": "\n".join(reference) if isinstance(reference, list) else str(reference),
                     "evidence": {
                         "request": item.get("request", ""),

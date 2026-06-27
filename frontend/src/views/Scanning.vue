@@ -40,7 +40,12 @@
         </template>
       </el-table-column>
       <el-table-column prop="progress" label="进度" width="120">
-        <template #default="{ row }"><el-progress :percentage="row.progress" :stroke-width="6" /></template>
+        <template #default="{ row }">
+          <el-progress :percentage="row.progress" :stroke-width="6" />
+          <div v-if="row.status === 'running' && row.progress < 100" style="font-size: 11px; color: var(--rs-text-secondary); margin-top: 2px;">
+            {{ row.scanned_count || 0 }}/{{ row.total_targets || 0 }} 目标 · {{ (row.engines || []).length || '?' }} 引擎
+          </div>
+        </template>
       </el-table-column>
       <el-table-column label="目标/漏洞" width="100">
         <template #default="{ row }">
@@ -111,7 +116,7 @@
         </div>
 
         <div v-if="detailScan.vulns_found > 0" style="margin-top: 16px;">
-          <el-button type="primary" size="small" @click="$router.push(`/projects/${pid}/findings`); showDetail = false">查看发现的漏洞 →</el-button>
+          <el-button type="primary" size="small" @click="$router.push(p(`/projects/${pid}/findings`)); showDetail = false">查看发现的漏洞 →</el-button>
         </div>
         <div v-else-if="detailScan.status === 'completed'" style="margin-top: 16px; padding: 12px; background: var(--rs-bg-secondary); border-radius: 6px; border-left: 3px solid var(--rs-warning);">
           <div style="font-size: 13px; color: var(--rs-warning); margin-bottom: 4px;">扫描完成但未发现漏洞</div>
@@ -172,8 +177,10 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../stores/api'
 import { logSessionActivity } from '../stores/api'
+import { useVersionPrefix } from '../composables/useVersionPrefix'
 
 const route = useRoute()
+const { p } = useVersionPrefix()
 const pid = route.params.id
 const tasks = ref([])
 const showCreate = ref(false)
@@ -259,11 +266,31 @@ const loadLogs = async (jobId) => {
   } catch { scanLogs.value = '无法加载日志' }
 }
 
+const prevRunning = ref(new Set())
+
 onMounted(async () => {
   await Promise.all([load(), loadEngines()])
-  pollTimer = setInterval(() => {
-    if (tasks.value.some(t => t.status === 'running' || t.status === 'pending')) load()
+  prevRunning.value = new Set(tasks.value.filter(t => t.status === 'running' || t.status === 'pending').map(t => t.id))
+  pollTimer = setInterval(async () => {
+    const hadRunning = prevRunning.value.size > 0
+    if (hadRunning) {
+      await load()
+      const nowRunning = new Set(tasks.value.filter(t => t.status === 'running' || t.status === 'pending').map(t => t.id))
+      for (const id of prevRunning.value) {
+        if (!nowRunning.has(id)) {
+          const finished = tasks.value.find(t => t.id === id)
+          if (finished) {
+            ElMessage.success({ message: `扫描「${finished.task_name}」已完成，发现 ${finished.vulns_found || 0} 个漏洞`, duration: 10000, showClose: true })
+            if (Notification.permission === 'granted') {
+              new Notification('RedScope 扫描完成', { body: `${finished.task_name}: ${finished.vulns_found || 0} 个漏洞` })
+            }
+          }
+        }
+      }
+      prevRunning.value = nowRunning
+    }
   }, 5000)
+  if (Notification.permission === 'default') Notification.requestPermission()
 })
 
 onUnmounted(() => { if (pollTimer) clearInterval(pollTimer) })

@@ -46,8 +46,10 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../stores/api'
+import { useVersionPrefix } from '../composables/useVersionPrefix'
 
 const router = useRouter()
+const { p } = useVersionPrefix()
 const findings = ref([])
 const stats = ref({})
 const loading = ref(false)
@@ -67,7 +69,7 @@ const load = async () => {
   finally { loading.value = false }
 }
 
-const goToFinding = (row) => { router.push(`/projects/${row.project_id}/findings`) }
+const goToFinding = (row) => { router.push(p(`/projects/${row.project_id}/findings`)) }
 
 onMounted(load)
 </script>

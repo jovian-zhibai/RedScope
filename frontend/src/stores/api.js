@@ -15,8 +15,12 @@ api.interceptors.response.use(
   (res) => res.data,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('token')
-      window.location.href = '/login'
+      const url = err.config?.url || ''
+      if (!url.includes('/auth/login') && !url.includes('/portal/login')) {
+        localStorage.removeItem('token')
+        const isV2 = localStorage.getItem('rs_ui_version') === 'v2'
+        window.location.href = isV2 ? '/v2/login' : '/login'
+      }
     }
     return Promise.reject(err)
   }

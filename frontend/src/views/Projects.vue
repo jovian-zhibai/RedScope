@@ -100,9 +100,11 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../stores/api'
+import { useVersionPrefix } from '../composables/useVersionPrefix'
 
 const router = useRouter()
 const route = useRoute()
+const { p } = useVersionPrefix()
 const projects = ref([])
 const showCreate = ref(false)
 const creating = ref(false)
@@ -132,11 +134,11 @@ const createProject = async () => {
     const res = await api.post('/projects', form.value)
     showCreate.value = false
     form.value = { name: '', mode: 'combat', description: '', client_name: '', auth_start_date: '', auth_end_date: '' }
-    router.push(`/projects/${res.id}`)
+    router.push(p(`/projects/${res.id}`))
   } finally { creating.value = false }
 }
 
-const goToProject = (row) => router.push(`/projects/${row.id}`)
+const goToProject = (row) => router.push(p(`/projects/${row.id}`))
 
 const loadTemplates = async () => {
   try { const res = await api.get('/templates'); templates.value = res.items || [] } catch {}
@@ -151,7 +153,7 @@ const createFromTemplate = async () => {
     })
     showTemplates.value = false
     ElMessage.success(`项目已创建: ${res.name}`)
-    router.push(`/projects/${res.id}`)
+    router.push(p(`/projects/${res.id}`))
   } catch (e) { ElMessage.error('创建失败') }
 }
 

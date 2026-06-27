@@ -316,3 +316,30 @@ code, pre, .code-font {
 /* Glow effects for important elements */
 .glow-danger { box-shadow: 0 0 12px rgba(239,68,68,0.2); }
 .glow-accent { box-shadow: 0 0 12px var(--rs-accent-glow); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: -240px;
+    top: 0;
+    bottom: 0;
+    z-index: 1000;
+    transition: left 0.25s ease;
+    &.open { left: 0; }
+  }
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+  }
+  .mobile-menu-btn { display: inline-flex !important; }
+  .main-content .topbar { padding: 0 12px; }
+  .main-content .page-content { padding: 12px; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .el-table { font-size: 12px; }
+  .el-dialog { width: 95vw !important; margin: 0 auto; }
+  .el-drawer { width: 100% !important; }
+  .terminal-panel { height: 200px; }
+}
