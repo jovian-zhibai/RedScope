@@ -14,15 +14,14 @@ def _write_audit_log(user_id, action, target_type, detail, ip_address, severity)
             log = AuditLog(
                 user_id=user_id,
                 action=action,
-                target_type=target_type,
-                detail=detail,
+                target=target_type,
+                detail={"message": detail, "severity": severity},
                 ip_address=ip_address,
-                severity=severity,
             )
             db.add(log)
             db.commit()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to write audit log: {e}")
 
 
 async def audit_log_middleware(request: Request, call_next):

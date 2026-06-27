@@ -62,8 +62,8 @@ async def _stop_terminal_container(job_id: str):
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.delete(f"{RUNNER_URL}/jobs/{job_id}", headers=headers)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to stop terminal container {job_id}: {e}")
 
 
 @router.websocket("/terminal/{session_id}")

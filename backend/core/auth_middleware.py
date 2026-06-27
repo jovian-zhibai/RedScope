@@ -15,7 +15,6 @@ PUBLIC_PATHS = {
     "/api/v1/auth/register",
     "/api/portal/login",
     "/api/v1/portal/login",
-    "/metrics",
     "/docs",
     "/openapi.json",
     "/redoc",
@@ -39,6 +38,8 @@ async def auth_middleware(request: Request, call_next):
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split(" ", 1)[1]
     elif "/download" in path or "/export/" in path:
+        # SECURITY NOTE: token via query param is a tradeoff for file downloads.
+        # These tokens should be short-lived. Avoid logging URLs with tokens.
         token = request.query_params.get("token")
 
     if not token:

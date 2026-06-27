@@ -95,18 +95,29 @@ async def finding_stats(project_id: int, _=Depends(require_project), db: AsyncSe
     return {"total": total, "severities": severities, "unfixed": unfixed, "fixed": fixed, "fix_rate": round(fixed / total * 100, 1) if total > 0 else 0}
 
 
+class FindingUpdate(BaseModel):
+    title: str | None = None
+    vuln_type: str | None = None
+    severity: str | None = None
+    cvss_score: float | None = None
+    description: str | None = None
+    detail: str | None = None
+    solution: str | None = None
+    fix_status: str | None = None
+    is_verified: bool | None = None
+    is_false_positive: bool | None = None
+    evidence: dict | None = None
+    attck_techniques: list | None = None
+
+
 @router.put("/{finding_id}")
-async def update_finding(project_id: int, finding_id: int, req: dict, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def update_finding(project_id: int, finding_id: int, req: FindingUpdate, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     finding = await db.get(Finding, finding_id)
     if not finding or finding.project_id != project_id:
         raise HTTPException(404, "漏洞不存在")
-    UPDATABLE_FIELDS = {"title", "vuln_type", "severity", "cvss_score", "description", "detail",
-                        "solution", "fix_status", "is_verified", "is_false_positive", "evidence", "attck_techniques"}
     VALID_SEVERITY = {"critical", "high", "medium", "low", "info"}
     VALID_FIX_STATUS = {"unfixed", "fixing", "fixed", "reopen", "accepted", "merged"}
-    for field, value in req.items():
-        if field not in UPDATABLE_FIELDS:
-            continue
+    for field, value in req.model_dump(exclude_unset=True).items():
         if field == "severity" and value not in VALID_SEVERITY:
             raise HTTPException(400, f"无效的严重程度: {value}")
         if field == "fix_status" and value not in VALID_FIX_STATUS:

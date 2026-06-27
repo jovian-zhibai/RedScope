@@ -25,10 +25,10 @@ class ReportGenerator:
         self.db = db
         self.project = db.get(Project, project_id)
         self.findings = list(db.execute(
-            select(Finding).where(Finding.project_id == project_id, Finding.is_false_positive == False)
+            select(Finding).where(Finding.project_id == project_id, Finding.is_false_positive == False, Finding.deleted_at == None)
             .order_by(Finding.severity)
         ).scalars().all())
-        self.assets = list(db.execute(select(Asset).where(Asset.project_id == project_id)).scalars().all())
+        self.assets = list(db.execute(select(Asset).where(Asset.project_id == project_id, Asset.deleted_at == None)).scalars().all())
         self.timeline = list(db.execute(
             select(AttackTimeline).where(AttackTimeline.project_id == project_id)
             .order_by(AttackTimeline.timestamp)

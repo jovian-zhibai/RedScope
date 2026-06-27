@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
@@ -54,16 +55,36 @@ async def toggle_plugin(plugin_id: str, _=Depends(require_manager), db: AsyncSes
     return {"name": plugin.name, "is_enabled": plugin.is_enabled}
 
 
+class CustomPluginCreate(BaseModel):
+    name: str
+    display_name: str = ""
+    command: str
+    docker_image: str = ""
+    category: str = "custom"
+    description: str = ""
+    output_format: str = "text"
+    inputs: list = []
+
+
+class PluginImportBundle(BaseModel):
+    filename: str
+    content: dict
+
+
+class PluginImportRequest(BaseModel):
+    plugins: list[PluginImportBundle] = []
+
+
 @router.post("/custom")
-async def add_custom_plugin(req: dict, _=Depends(require_manager)):
+async def add_custom_plugin(req: CustomPluginCreate, _=Depends(require_manager)):
     import yaml
     from pathlib import Path
 
-    name = req.get("name", "").strip()
+    name = req.name.strip()
     if not name or not name.replace("-", "").replace("_", "").isalnum():
         raise HTTPException(400, "工具名称只能包含字母、数字、连字符和下划线")
 
-    command = req.get("command", "").strip()
+    command = req.command.strip()
     if not command:
         raise HTTPException(400, "执行命令不能为空")
     dangerous_patterns = [";", "&&", "||", "|", "`", "$(", ">>", "<<", "rm ", "chmod ", "chown ", "curl ", "wget "]
@@ -133,12 +154,12 @@ async def export_plugins(_=Depends(require_manager)):
 
 
 @router.post("/import")
-async def import_plugins(req: dict, _=Depends(require_manager)):
+async def import_plugins(req: PluginImportRequest, _=Depends(require_manager)):
     """Import plugins from a shared JSON bundle."""
     import yaml
     from pathlib import Path
 
-    plugins_data = req.get("plugins", [])
+    plugins_data = req.plugins
     if not plugins_data:
         raise HTTPException(400, "没有可导入的插件数据")
 
@@ -148,8 +169,8 @@ async def import_plugins(req: dict, _=Depends(require_manager)):
     imported = []
     skipped = []
     for p in plugins_data:
-        filename = p.get("filename", "")
-        content = p.get("content", {})
+        filename = p.filename
+        content = p.content
         if not filename or not content:
             continue
 

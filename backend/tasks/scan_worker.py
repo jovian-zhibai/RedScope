@@ -222,8 +222,9 @@ async def _run_scan_task_async(task_self, scan_task_id: int):
                     asset_importance=asset.importance if asset else "normal",
                 )
             db.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("scan_worker").error(f"Risk scoring failed for project {task.project_id}: {e}")
 
         # Post-scan: send notification
         try:
@@ -235,8 +236,9 @@ async def _run_scan_task_async(task_self, scan_task_id: int):
                     _settings.notify_webhook_url, _settings.notify_channel,
                     task.task_name or f"扫描任务#{task.id}", total_vulns,
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger("scan_worker").error(f"Notification failed for task {task.id}: {e}")
 
     return {"task_id": scan_task_id, "vulns_found": total_vulns}
 
@@ -250,8 +252,9 @@ async def _notify_critical_instant(findings, task_name: str):
         message = f"🚨 紧急: 扫描「{task_name}」发现 {len(findings)} 个严重漏洞!\n{titles}"
         from backend.core.notify import send_webhook
         await send_webhook(_settings.notify_channel, _settings.notify_webhook_url, "RedScope 严重漏洞告警", message)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("scan_worker").warning(f"Failed to send critical instant notification: {e}")
 
 
 def _parse_results(db: Session, plugin: PluginConfig, output_dir: str, project_id: int) -> list:

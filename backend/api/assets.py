@@ -19,6 +19,22 @@ class AssetCreate(BaseModel):
     tags: list[str] = []
 
 
+class AssetUpdate(BaseModel):
+    host: str | None = None
+    port: int | None = None
+    protocol: str | None = None
+    url: str | None = None
+    os: str | None = None
+    server: str | None = None
+    framework: str | None = None
+    application: str | None = None
+    app_version: str | None = None
+    scope_status: str | None = None
+    importance: str | None = None
+    is_alive: bool | None = None
+    tags: list[str] | None = None
+
+
 @router.get("")
 async def list_assets(
     project_id: int,
@@ -86,17 +102,14 @@ async def asset_stats(project_id: int, _=Depends(require_project), db: AsyncSess
 
 
 @router.put("/{asset_id}")
-async def update_asset(project_id: int, asset_id: int, req: dict, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def update_asset(project_id: int, asset_id: int, req: AssetUpdate, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     asset = await db.get(Asset, asset_id)
     if not asset or asset.project_id != project_id:
         raise HTTPException(404, "资产不存在")
-    UPDATABLE_FIELDS = {"host", "port", "protocol", "url", "os", "server", "framework",
-                        "application", "app_version", "scope_status", "importance", "is_alive", "tags"}
     VALID_IMPORTANCE = {"critical", "normal", "low", "deprecated"}
     VALID_SCOPE = {"in_scope", "out_of_scope", "pending_confirm"}
-    for field, value in req.items():
-        if field not in UPDATABLE_FIELDS:
-            continue
+    update_data = req.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
         if field == "importance" and value not in VALID_IMPORTANCE:
             raise HTTPException(400, f"无效的重要性: {value}")
         if field == "scope_status" and value not in VALID_SCOPE:

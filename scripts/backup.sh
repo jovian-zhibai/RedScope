@@ -18,7 +18,8 @@ if [ -z "$DB_CONTAINER" ]; then
 fi
 
 echo "[INFO] Starting backup at $(date)"
-docker exec "$DB_CONTAINER" pg_dump -U redscope redscope | gzip > "$BACKUP_FILE"
+DB_USER="${POSTGRES_USER:-redscope}"
+docker exec "$DB_CONTAINER" pg_dump -U "$DB_USER" redscope | gzip > "$BACKUP_FILE"
 
 if [ $? -eq 0 ]; then
     SIZE=$(du -h "$BACKUP_FILE" | cut -f1)

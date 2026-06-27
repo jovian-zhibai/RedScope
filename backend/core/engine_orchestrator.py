@@ -119,8 +119,8 @@ class EngineOrchestrator:
                     data = resp.json()
                     if data["status"] in ("completed", "failed", "cancelled"):
                         return data
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Job poll error (will retry): {e}")
                 await asyncio.sleep(interval)
                 elapsed += interval
                 if elapsed > 60:
@@ -165,8 +165,8 @@ class EngineOrchestrator:
                     headers["X-Runner-Secret"] = self.runner_secret
                 async with httpx.AsyncClient(timeout=10) as client:
                     await client.delete(f"{self.runner_url}/jobs/{job_id}", headers=headers)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to stop engine {task_id}: {e}")
             self._running_jobs.pop(task_id, None)
 
     async def stop_all(self):

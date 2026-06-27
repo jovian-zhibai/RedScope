@@ -9,6 +9,10 @@ from backend.core.baseline_scanner import ALL_BASELINES, evaluate_check
 router = APIRouter()
 
 
+class BaselineRunRequest(BaseModel):
+    target: str = ""
+
+
 @router.get("/baselines")
 async def list_baselines(request: Request):
     return {"items": [
@@ -51,7 +55,7 @@ class BaselineRunRequest(BaseModel):
 
 
 @router.post("/baselines/{baseline_key}/run")
-async def run_baseline_check(baseline_key: str, req: dict = {}, request: Request = None, db: AsyncSession = Depends(get_db)):
+async def run_baseline_check(baseline_key: str, req: BaselineRunRequest = BaselineRunRequest(), request: Request = None, db: AsyncSession = Depends(get_db)):
     if request and request.state.role not in ("admin", "leader", "engineer"):
         raise HTTPException(403, "无权限执行基线扫描")
     baseline = ALL_BASELINES.get(baseline_key)
@@ -64,7 +68,7 @@ async def run_baseline_check(baseline_key: str, req: dict = {}, request: Request
         "status": "manual_mode",
         "message": "请在目标主机上逐项执行以下检查命令，将结果填入平台",
         "baseline": baseline["name"],
-        "target": req.get("target", ""),
+        "target": req.target,
         "checks": [
             {
                 "id": item.id,

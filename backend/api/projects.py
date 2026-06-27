@@ -41,8 +41,10 @@ async def list_projects(status: str | None = None, request: Request = None, db: 
         Project,
         func.count(Asset.id.distinct()).label("asset_count"),
         func.count(Finding.id.distinct()).label("finding_count"),
-    ).outerjoin(Asset, Asset.project_id == Project.id).outerjoin(
-        Finding, Finding.project_id == Project.id
+    ).outerjoin(
+        Asset, (Asset.project_id == Project.id) & (Asset.deleted_at == None)
+    ).outerjoin(
+        Finding, (Finding.project_id == Project.id) & (Finding.deleted_at == None)
     ).group_by(Project.id).order_by(Project.updated_at.desc())
 
     if status:
@@ -105,8 +107,8 @@ async def get_project(project_id: int, _=Depends(require_project), db: AsyncSess
     if not project:
         raise HTTPException(404, "项目不存在")
 
-    asset_count = await db.scalar(select(func.count()).where(Asset.project_id == project_id))
-    finding_count = await db.scalar(select(func.count()).where(Finding.project_id == project_id))
+    asset_count = await db.scalar(select(func.count()).where(Asset.project_id == project_id, Asset.deleted_at == None))
+    finding_count = await db.scalar(select(func.count()).where(Finding.project_id == project_id, Finding.deleted_at == None))
 
     return {
         "id": project.id, "name": project.name, "mode": project.mode,

@@ -15,10 +15,18 @@ BLOCKED_NETWORKS = [
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("fe80::/10"),
     ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("0.0.0.0/8"),  # Block 0.0.0.0 which can bypass checks
 ]
 
 
 def validate_url_not_internal(url: str) -> str:
+    """Validate URL does not point to internal/private networks.
+    
+    NOTE: DNS rebinding attacks are not fully mitigated by this check.
+    For high-security scenarios, use a DNS proxy that blocks rebinding.
+    The resolved IP is checked once here, but the actual HTTP client
+    may resolve again (TOCTOU). Consider passing resolved IP to httpx.
+    """
     parsed = urlparse(url)
     hostname = parsed.hostname
     if not hostname:
@@ -28,6 +36,9 @@ def validate_url_not_internal(url: str) -> str:
         resolved = socket.getaddrinfo(hostname, None)
         for _, _, _, _, addr in resolved:
             ip = ipaddress.ip_address(addr[0])
+            # Block unspecified address (0.0.0.0)
+            if ip.is_unspecified:
+                raise HTTPException(400, f"目标地址 {hostname} 解析到无效地址，已拦截")
             for network in BLOCKED_NETWORKS:
                 if ip in network:
                     raise HTTPException(400, f"目标地址 {hostname} 解析到内网地址，已拦截 (SSRF 防护)")

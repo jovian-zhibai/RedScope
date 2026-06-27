@@ -75,12 +75,13 @@ class BoundaryChecker:
                     return False
 
         if rule.target_type == "domain":
-            pattern = rule.target_value.replace(".", r"\.").replace("*", r"[a-zA-Z0-9._-]*")
-            return bool(re.match(f"^{pattern}$", target, re.IGNORECASE))
+            # Escape all regex-special chars except the wildcard *
+            escaped = re.escape(rule.target_value).replace(r"\*", r"[a-zA-Z0-9._-]*")
+            return bool(re.match(f"^{escaped}$", target, re.IGNORECASE))
 
         if rule.target_type == "url":
-            pattern = rule.target_value.replace("*", ".*")
-            return bool(re.match(f"^{pattern}$", target, re.IGNORECASE))
+            escaped = re.escape(rule.target_value).replace(r"\*", ".*")
+            return bool(re.match(f"^{escaped}$", target, re.IGNORECASE))
 
         if rule.target_type == "port" and port is not None:
             allowed_ports = self._parse_ports(rule.target_value)

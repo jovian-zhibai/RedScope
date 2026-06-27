@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
@@ -9,6 +10,14 @@ from backend.core.rbac import require_project
 from backend.models.operational import Report
 
 router = APIRouter()
+
+
+class ReportGenerateRequest(BaseModel):
+    title: str = "渗透测试报告"
+    report_type: str = "pentest"
+    include_sections: list[str] = ["summary", "findings", "statistics"]
+    compliance_std: str | None = None
+    format: str = "docx"
 
 
 @router.get("")
@@ -101,14 +110,14 @@ async def preview_report(project_id: int, report_id: int, _=Depends(require_proj
 
 
 @router.post("/generate")
-async def generate_report(project_id: int, req: dict, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def generate_report(project_id: int, req: ReportGenerateRequest, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     report = Report(
         project_id=project_id,
-        title=req.get("title", "渗透测试报告"),
-        report_type=req.get("report_type", "pentest"),
-        include_sections=req.get("include_sections", ["summary", "findings", "statistics"]),
-        compliance_std=req.get("compliance_std"),
-        format=req.get("format", "docx"),
+        title=req.title,
+        report_type=req.report_type,
+        include_sections=req.include_sections,
+        compliance_std=req.compliance_std,
+        format=req.format,
     )
     db.add(report)
     await db.flush()

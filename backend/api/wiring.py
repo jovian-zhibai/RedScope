@@ -1,5 +1,12 @@
 """Wiring API: connects all core modules (vuln matching, dedup, risk scoring,
-ATT&CK mapping, OPSEC monitor, import/export, pipeline execution) to endpoints."""
+ATT&CK mapping, OPSEC monitor, import/export, pipeline execution) to endpoints.
+
+TODO(refactor): This file is 740+ lines and should be split into:
+  - api/vuln_intel.py    (vuln matching, knowledge search, roadmap)
+  - api/pipeline.py      (pipeline execution, import/export)
+  - api/ai_endpoints.py  (LLM test, AI assistant, report writer)
+  - api/notifications.py (notification test, webhook management)
+"""
 
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
@@ -10,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.core.rbac import require_project
 from backend.database_sync import SyncSession
+from backend.core.error_handler import logger
 
 router = APIRouter()
 
@@ -278,8 +286,8 @@ async def list_pipelines():
                     "description": data.get("description", ""),
                     "node_count": len(data.get("nodes", [])),
                 })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to load pipeline {f.stem}: {e}")
 
     return {"items": pipelines}
 
@@ -371,14 +379,21 @@ async def run_llm_security_test(project_id: int, req: LLMTestRequest, _=Depends(
 
 # ─── AI Report Writing ───────────────────────────────────
 
+class VulnDescriptionRequest(BaseModel):
+    title: str = ""
+    vuln_type: str = ""
+    severity: str = ""
+    raw_detail: str = ""
+
+
 @router.post("/projects/{project_id}/ai-vuln-description")
-async def ai_generate_vuln_description(project_id: int, req: dict, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def ai_generate_vuln_description(project_id: int, req: VulnDescriptionRequest, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     from backend.ai.report_writer import generate_vuln_description
     result = await generate_vuln_description(
-        title=req.get("title", ""),
-        vuln_type=req.get("vuln_type", ""),
-        severity=req.get("severity", ""),
-        raw_detail=req.get("raw_detail", ""),
+        title=req.title,
+        vuln_type=req.vuln_type,
+        severity=req.severity,
+        raw_detail=req.raw_detail,
     )
     return result
 

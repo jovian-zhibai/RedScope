@@ -1,15 +1,22 @@
 """Proxy health checker: periodically tests proxy node connectivity."""
 
 import socket
+import logging
 from datetime import datetime
 from sqlalchemy import select
 from backend.tasks.celery_app import celery_app
 from backend.database_sync import SyncSession
 from backend.models.operational import ProxyNode
 
+logger = logging.getLogger("proxy_health")
+
 
 def _test_socks_proxy(host: str, port: int, timeout: int = 5) -> tuple[bool, int]:
-    """Test SOCKS proxy connectivity. Returns (success, latency_ms)."""
+    """Test SOCKS proxy connectivity via TCP handshake.
+    
+    NOTE: This only verifies TCP reachability, not SOCKS protocol handshake.
+    For full SOCKS validation, use a SOCKS client library (e.g., PySocks).
+    """
     start = datetime.now()
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -18,7 +25,8 @@ def _test_socks_proxy(host: str, port: int, timeout: int = 5) -> tuple[bool, int
         sock.close()
         latency = int((datetime.now() - start).total_seconds() * 1000)
         return True, latency
-    except (socket.timeout, ConnectionRefusedError, OSError):
+    except (socket.timeout, ConnectionRefusedError, OSError) as e:
+        logger.debug(f"Proxy {host}:{port} unreachable: {e}")
         return False, 0
 
 

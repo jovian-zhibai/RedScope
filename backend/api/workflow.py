@@ -76,7 +76,10 @@ async def create_order(req: OrderCreate, request: Request, db: AsyncSession = De
 
 
 @router.get("/{order_id}")
-async def get_order(order_id: int, db: AsyncSession = Depends(get_db)):
+async def get_order(order_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    # Auth is enforced by middleware; this ensures user_id is available
+    if not hasattr(request.state, 'user_id'):
+        raise HTTPException(401, "请先登录")
     order = await db.get(WorkOrder, order_id)
     if not order:
         raise HTTPException(404, "工单不存在")
@@ -139,8 +142,12 @@ async def transition_order(order_id: int, req: StatusTransition, _=Depends(requi
     return {"id": order.id, "status": order.status}
 
 
+class CommentCreate(BaseModel):
+    content: str
+
+
 @router.post("/{order_id}/comments")
-async def add_comment(order_id: int, req: dict, request: Request, db: AsyncSession = Depends(get_db)):
+async def add_comment(order_id: int, req: CommentCreate, request: Request, db: AsyncSession = Depends(get_db)):
     order = await db.get(WorkOrder, order_id)
     if not order:
         raise HTTPException(404, "工单不存在")
@@ -148,7 +155,7 @@ async def add_comment(order_id: int, req: dict, request: Request, db: AsyncSessi
     comment = WorkOrderComment(
         order_id=order_id,
         user_id=request.state.user_id,
-        content=req.get("content", ""),
+        content=req.content,
     )
     db.add(comment)
     await db.flush()

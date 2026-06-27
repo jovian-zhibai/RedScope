@@ -58,7 +58,7 @@ services:
       dockerfile: docker/Dockerfile.scanner
     environment:
       SCAN_OUTPUT_DIR: /app/output
-      RUNNER_SECRET: ${RUNNER_SECRET:-redscope-runner-secret}
+      RUNNER_SECRET: ${RUNNER_SECRET:?RUNNER_SECRET must be set}
       ALLOWED_IMAGES: "instrumentisto/nmap,projectdiscovery/nuclei,projectdiscovery/subfinder,projectdiscovery/httpx,paoloo/sqlmap,cyal1/dirsearch,ghcr.io/zan8in/afrog,shadowlianmc/fscan,lnxbil/whatweb,ekultek/wafw00f,ffuf/ffuf"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -91,7 +91,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       SCAN_RUNNER_URL: http://scan-runner:9090
-      RUNNER_SECRET: ${RUNNER_SECRET:-redscope-runner-secret}
+      RUNNER_SECRET: ${RUNNER_SECRET:?RUNNER_SECRET must be set}
     volumes:
       - scan_output:/app/output
       - ./plugins:/app/plugins
@@ -125,12 +125,12 @@ services:
       dockerfile: docker/Dockerfile.backend
     command: celery -A backend.tasks.celery_app worker -l info -c 4
     environment:
-      DATABASE_URL: postgresql+asyncpg://redscope:${DB_PASSWORD}@db:5432/redscope
+      DATABASE_URL: postgresql+psycopg2://redscope:${DB_PASSWORD}@db:5432/redscope
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       SCAN_RUNNER_URL: http://scan-runner:9090
-      RUNNER_SECRET: ${RUNNER_SECRET:-redscope-runner-secret}
+      RUNNER_SECRET: ${RUNNER_SECRET:?RUNNER_SECRET must be set}
     volumes:
       - scan_output:/app/output  # rw needed for _run_local fallback; Docker scans go through scan-runner
       - ./plugins:/app/plugins:ro
@@ -157,7 +157,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.frontend
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
     depends_on:
       - backend
     restart: unless-stopped

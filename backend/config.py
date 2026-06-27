@@ -45,6 +45,12 @@ class Settings(BaseSettings):
                 raise ValueError("生产环境 SECRET_KEY 不能使用默认值")
             if self.debug:
                 self.debug = False
+            # Warn about default database URL in production
+            if "redscope_dev_" in self.database_url or "localhost" in self.database_url:
+                warnings.warn(
+                    "\n⚠️  WARNING: 生产环境检测到默认数据库URL，请修改 DATABASE_URL！",
+                    stacklevel=2,
+                )
         if not self.secret_key:
             self.secret_key = "redscope-dev-only-do-not-use-in-production"
             warnings.warn(

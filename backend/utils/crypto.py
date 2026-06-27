@@ -9,7 +9,9 @@ import base64
 def _get_fernet() -> Fernet:
     settings = get_settings()
     import hashlib as hl
-    key = hl.pbkdf2_hmac("sha256", settings.secret_key.encode(), b"redscope-salt-v1", iterations=100_000)
+    # Derive salt from SECRET_KEY so each deployment has unique salt
+    salt = hl.sha256(settings.secret_key.encode()).digest()[:16]
+    key = hl.pbkdf2_hmac("sha256", settings.secret_key.encode(), salt, iterations=100_000)
     key_b64 = base64.urlsafe_b64encode(key)
     return Fernet(key_b64)
 

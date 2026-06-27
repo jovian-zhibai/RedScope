@@ -93,9 +93,10 @@ async def health_check():
         status["database"] = "error"
 
     try:
-        import redis as redis_lib
-        r = redis_lib.from_url(settings.redis_url)
-        r.ping()
+        from redis.asyncio import Redis as AsyncRedis
+        r = AsyncRedis.from_url(settings.redis_url)
+        await r.ping()
+        await r.aclose()
         status["redis"] = "ok"
     except Exception:
         status["redis"] = "error"
@@ -164,13 +165,31 @@ async def dashboard_summary(request: Request, db: AsyncSession = Depends(get_db)
         ]
 
     from backend.models.asset import Asset
+    # Batch query to avoid N+1: fetch all asset/finding counts in one query
+    if project_ids:
+        asset_counts_q = (
+            select(Asset.project_id, func.count().label("cnt"))
+            .where(Asset.project_id.in_(project_ids), Asset.deleted_at == None)
+            .group_by(Asset.project_id)
+        )
+        finding_counts_q = (
+            select(Finding.project_id, func.count().label("cnt"))
+            .where(Finding.project_id.in_(project_ids), Finding.deleted_at == None)
+            .group_by(Finding.project_id)
+        )
+        asset_counts = {pid: cnt for pid, cnt in (await db.execute(asset_counts_q)).all()}
+        finding_counts = {pid: cnt for pid, cnt in (await db.execute(finding_counts_q)).all()}
+    else:
+        asset_counts = {}
+        finding_counts = {}
+
     projects_data = []
     for p in projects[:10]:
-        asset_count = await db.scalar(select(func.count()).where(Asset.project_id == p.id, Asset.deleted_at == None)) or 0
-        finding_count = await db.scalar(select(func.count()).where(Finding.project_id == p.id, Finding.deleted_at == None)) or 0
         projects_data.append({
             "id": p.id, "name": p.name, "mode": p.mode, "status": p.status,
-            "client_name": p.client_name, "asset_count": asset_count, "finding_count": finding_count,
+            "client_name": p.client_name,
+            "asset_count": asset_counts.get(p.id, 0),
+            "finding_count": finding_counts.get(p.id, 0),
         })
 
     recent_findings_data = []
@@ -318,7 +337,8 @@ async def global_assets(request: Request, search: str = None, db: AsyncSession =
 
     query = select(Asset).where(Asset.project_id.in_(project_map.keys()), Asset.deleted_at == None)
     if search:
-        query = query.where(Asset.host.ilike(f"%{search}%"))
+        escaped_search = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.where(Asset.host.ilike(f"%{escaped_search}%"))
     query = query.order_by(Asset.first_seen_at.desc()).limit(100)
 
     result = await db.execute(query)
@@ -347,7 +367,12 @@ async def global_search(q: str = "", request: Request = None, db: AsyncSession =
     if not q or len(q) < 2:
         return {"projects": [], "assets": [], "findings": [], "knowledge": []}
 
-    pattern = f"%{q}%"
+    # Escape SQL LIKE wildcards to prevent injection
+    def _escape_like(s: str) -> str:
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    escaped_q = _escape_like(q)
+    pattern = f"%{escaped_q}%"
     is_admin = getattr(request.state, 'role', '') == 'admin' if request else False
     user_id = getattr(request.state, 'user_id', 0) if request else 0
 

@@ -196,21 +196,26 @@ async def create_compromised_host(project_id: int, req: CompromisedHostCreate, _
     return {"id": host.id}
 
 
+class FileUploadRecord(BaseModel):
+    path: str
+    description: str = ""
+
+
 @router.post("/hosts/{host_id}/upload-file")
-async def record_uploaded_file(project_id: int, host_id: int, req: dict, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def record_uploaded_file(project_id: int, host_id: int, req: FileUploadRecord, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     host = await db.get(CompromisedHost, host_id)
     if not host or host.project_id != project_id:
         raise HTTPException(404, "主机不存在")
 
     files = host.uploaded_files or []
-    files.append({"path": req.get("path"), "description": req.get("description", ""), "uploaded_at": str(__import__("datetime").datetime.now())})
+    files.append({"path": req.path, "description": req.description, "uploaded_at": str(datetime.now())})
     host.uploaded_files = files
 
     cleanup = CleanupItem(
         project_id=project_id, host_id=host_id,
         item_type="uploaded_file",
-        description=f"删除文件: {req.get('path')}",
-        file_path=req.get("path"),
+        description=f"删除文件: {req.path}",
+        file_path=req.path,
     )
     db.add(cleanup)
     await db.flush()

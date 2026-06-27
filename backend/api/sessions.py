@@ -88,14 +88,19 @@ async def list_sessions(project_id: int, _=Depends(require_project), db: AsyncSe
     ]}
 
 
+class ActivityLog(BaseModel):
+    action: str
+    detail: str = ""
+
+
 @router.post("/projects/{project_id}/sessions/{session_id}/activity")
-async def log_activity(project_id: int, session_id: int, req: dict, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def log_activity(project_id: int, session_id: int, req: ActivityLog, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     session = await db.get(WorkSession, session_id)
     if not session or session.project_id != project_id:
         raise HTTPException(404)
     if not session.activities:
         session.activities = []
-    session.activities = session.activities + [{"action": req.get("action"), "detail": req.get("detail"), "time": datetime.now().isoformat()}]
+    session.activities = session.activities + [{"action": req.action, "detail": req.detail, "time": datetime.now().isoformat()}]
     await db.flush()
     return {"logged": True}
 
@@ -119,7 +124,14 @@ async def upload_screenshot(
     upload_dir = f"/app/output/screenshots/{project_id}"
     os.makedirs(upload_dir, exist_ok=True)
 
-    safe_name = P(file.filename).name.replace("..", "").replace("/", "").replace("\\", "")
+    import re
+    # Robust filename sanitization: strip path components, remove all dangerous chars
+    raw_name = P(file.filename or "screenshot.png").name
+    # Remove path separators, null bytes, and double-dot traversal
+    safe_name = re.sub(r'[^\w\s\-.]', '', raw_name).strip()
+    safe_name = safe_name.replace('..', '').strip()
+    if not safe_name:
+        safe_name = "screenshot.png"
     allowed_ext = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
     ext = P(safe_name).suffix.lower()
     if ext not in allowed_ext:
@@ -186,17 +198,26 @@ async def view_screenshot(project_id: int, screenshot_id: int, _=Depends(require
 
 # ─── Terminal Recordings ──────────────────────────────────
 
+class RecordingCreate(BaseModel):
+    session_id: int | None = None
+    title: str = "终端录制"
+    commands: list = []
+    duration_seconds: int | None = None
+    is_playbook: bool = False
+    playbook_name: str | None = None
+
+
 @router.post("/projects/{project_id}/recordings")
-async def save_recording(project_id: int, req: dict, request: Request, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def save_recording(project_id: int, req: RecordingCreate, request: Request, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     recording = TerminalRecording(
         project_id=project_id,
-        session_id=req.get("session_id"),
-        title=req.get("title", "终端录制"),
-        commands=req.get("commands", []),
-        duration_seconds=req.get("duration_seconds"),
+        session_id=req.session_id,
+        title=req.title,
+        commands=req.commands,
+        duration_seconds=req.duration_seconds,
         recorded_by=request.state.user_id,
-        is_playbook=req.get("is_playbook", False),
-        playbook_name=req.get("playbook_name"),
+        is_playbook=req.is_playbook,
+        playbook_name=req.playbook_name,
     )
     db.add(recording)
     await db.flush()
@@ -234,8 +255,14 @@ async def list_all_playbooks(db: AsyncSession = Depends(get_db)):
 
 # ─── Risk Acceptance ──────────────────────────────────────
 
+class RiskAcceptRequest(BaseModel):
+    client_name: str = ""
+    accepted_by: str = ""
+    reason: str = ""
+
+
 @router.post("/projects/{project_id}/findings/{finding_id}/accept-risk")
-async def accept_risk(project_id: int, finding_id: int, req: dict, request: Request, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def accept_risk(project_id: int, finding_id: int, req: RiskAcceptRequest, request: Request, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     from backend.models.finding import Finding
 
     finding = await db.get(Finding, finding_id)
@@ -245,9 +272,9 @@ async def accept_risk(project_id: int, finding_id: int, req: dict, request: Requ
     acceptance = RiskAcceptance(
         project_id=project_id,
         finding_id=finding_id,
-        client_name=req.get("client_name", ""),
-        accepted_by=req.get("accepted_by", ""),
-        reason=req.get("reason", ""),
+        client_name=req.client_name,
+        accepted_by=req.accepted_by,
+        reason=req.reason,
         created_by=request.state.user_id,
     )
     db.add(acceptance)
@@ -285,18 +312,30 @@ async def list_templates(db: AsyncSession = Depends(get_db)):
     ]}
 
 
+class TemplateCreate(BaseModel):
+    name: str
+    description: str = ""
+    mode: str = "combat"
+    scope_rules: list = []
+    engines: list = []
+    pipeline_name: str | None = None
+    checklist_ids: list = []
+    scan_intensity: str = "standard"
+    max_concurrency: int = 50
+
+
 @router.post("/templates")
-async def create_template(req: dict, request: Request, db: AsyncSession = Depends(get_db)):
+async def create_template(req: TemplateCreate, request: Request, db: AsyncSession = Depends(get_db)):
     template = ProjectTemplate(
-        name=req["name"],
-        description=req.get("description", ""),
-        mode=req.get("mode", "combat"),
-        scope_rules=req.get("scope_rules", []),
-        engines=req.get("engines", []),
-        pipeline_name=req.get("pipeline_name"),
-        checklist_ids=req.get("checklist_ids", []),
-        scan_intensity=req.get("scan_intensity", "standard"),
-        max_concurrency=req.get("max_concurrency", 50),
+        name=req.name,
+        description=req.description,
+        mode=req.mode,
+        scope_rules=req.scope_rules,
+        engines=req.engines,
+        pipeline_name=req.pipeline_name,
+        checklist_ids=req.checklist_ids,
+        scan_intensity=req.scan_intensity,
+        max_concurrency=req.max_concurrency,
         created_by=request.state.user_id,
     )
     db.add(template)
@@ -304,8 +343,13 @@ async def create_template(req: dict, request: Request, db: AsyncSession = Depend
     return {"id": template.id, "name": template.name}
 
 
+class TemplateFromProjectRequest(BaseModel):
+    name: str | None = None
+    description: str = ""
+
+
 @router.post("/templates/from-project/{project_id}")
-async def create_template_from_project(project_id: int, req: dict, request: Request, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def create_template_from_project(project_id: int, req: TemplateFromProjectRequest, request: Request, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     from backend.models.project import Project, ScopeRule
 
     project = await db.get(Project, project_id)
@@ -317,8 +361,8 @@ async def create_template_from_project(project_id: int, req: dict, request: Requ
              for r in rules_result.scalars().all()]
 
     template = ProjectTemplate(
-        name=req.get("name", f"{project.name} 模板"),
-        description=req.get("description", ""),
+        name=req.name or f"{project.name} 模板",
+        description=req.description,
         mode=project.mode,
         scope_rules=rules,
         scan_intensity=project.scan_intensity,
@@ -330,8 +374,14 @@ async def create_template_from_project(project_id: int, req: dict, request: Requ
     return {"id": template.id, "name": template.name}
 
 
+class TemplateApplyRequest(BaseModel):
+    name: str | None = None
+    description: str = ""
+    client_name: str = ""
+
+
 @router.post("/templates/apply/{template_id}")
-async def create_project_from_template(template_id: int, req: dict, request: Request, db: AsyncSession = Depends(get_db)):
+async def create_project_from_template(template_id: int, req: TemplateApplyRequest, request: Request, db: AsyncSession = Depends(get_db)):
     if not hasattr(request.state, 'user_id'):
         raise HTTPException(401, "请先登录")
     from backend.models.project import Project, ScopeRule
@@ -341,10 +391,10 @@ async def create_project_from_template(template_id: int, req: dict, request: Req
         raise HTTPException(404, "模板不存在")
 
     project = Project(
-        name=req.get("name", f"新项目 (基于 {template.name})"),
+        name=req.name or f"新项目(基于 {template.name})",
         mode=template.mode,
-        description=req.get("description", template.description),
-        client_name=req.get("client_name", ""),
+        description=req.description or template.description,
+        client_name=req.client_name,
         scan_intensity=template.scan_intensity,
         max_concurrency=template.max_concurrency,
         created_by=request.state.user_id,

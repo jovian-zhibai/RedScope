@@ -257,8 +257,19 @@ async def get_system_settings(request: Request, db: AsyncSession = Depends(get_d
     }
 
 
+class SystemSettingsUpdate(BaseModel):
+    llm_api_key: str | None = None
+    llm_base_url: str | None = None
+    llm_model: str | None = None
+    notify_webhook_url: str | None = None
+    notify_channel: str | None = None
+    max_concurrent_scans: int | None = None
+    max_targets_per_scan: int | None = None
+    nvd_api_key: str | None = None
+
+
 @router.put("/settings/system")
-async def update_system_settings(req: dict, request: Request, db: AsyncSession = Depends(get_db)):
+async def update_system_settings(req: SystemSettingsUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     if request.state.role != "admin":
         raise HTTPException(403, "仅管理员可修改")
     from backend.models.operational import SystemSetting
@@ -266,7 +277,8 @@ async def update_system_settings(req: dict, request: Request, db: AsyncSession =
     allowed_keys = {"llm_api_key", "llm_base_url", "llm_model", "notify_webhook_url", "notify_channel",
                      "max_concurrent_scans", "max_targets_per_scan", "nvd_api_key"}
     VALID_CHANNELS = {"wecom", "dingtalk", "feishu", "slack", "telegram"}
-    for key, value in req.items():
+    req_dict = {k: v for k, v in req.model_dump().items() if v is not None}
+    for key, value in req_dict.items():
         if key not in allowed_keys:
             continue
         if key == "notify_channel" and value not in VALID_CHANNELS:
@@ -337,6 +349,17 @@ async def clone_project(project_id: int, request: Request, db: AsyncSession = De
     project = await db.get(Project, project_id)
     if not project:
         raise HTTPException(404, "项目不存在")
+
+    # Verify user has access to the source project
+    user_id = request.state.user_id
+    role = getattr(request.state, 'role', 'viewer')
+    tenant_id = getattr(request.state, 'tenant_id', None)
+    if role != 'admin':
+        if project.created_by != user_id:
+            if tenant_id and project.tenant_id != tenant_id:
+                raise HTTPException(403, "无权复制该项目")
+            elif not tenant_id:
+                raise HTTPException(403, "无权复制该项目")
 
     new_project = Project(
         name=f"{project.name} (副本)",

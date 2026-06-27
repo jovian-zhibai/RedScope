@@ -30,6 +30,10 @@ class ClientAccountCreate(BaseModel):
     project_id: int
 
 
+class RetestRequest(BaseModel):
+    finding_ids: list[int] = []
+
+
 async def _verify_client_project(request: Request, project_id: int, db=None):
     """Verify the client token's project_id matches and account is active."""
     auth_header = request.headers.get("Authorization", "")
@@ -103,11 +107,15 @@ async def client_project_overview(project_id: int, request: Request, db: AsyncSe
 
     severities = {}
     for sev in ["critical", "high", "medium", "low", "info"]:
-        count = await db.scalar(select(func.count()).where(Finding.project_id == project_id, Finding.severity == sev))
+        count = await db.scalar(select(func.count()).where(
+            Finding.project_id == project_id, Finding.severity == sev, Finding.deleted_at == None
+        ))
         severities[sev] = count
 
     total = sum(severities.values())
-    fixed = await db.scalar(select(func.count()).where(Finding.project_id == project_id, Finding.fix_status == "fixed"))
+    fixed = await db.scalar(select(func.count()).where(
+        Finding.project_id == project_id, Finding.fix_status == "fixed", Finding.deleted_at == None
+    ))
 
     return {
         "project_name": project.name, "client_name": project.client_name,
@@ -122,7 +130,11 @@ async def client_findings(project_id: int, request: Request, db: AsyncSession = 
     await _verify_client_project(request, project_id, db)
 
     result = await db.execute(
-        select(Finding).where(Finding.project_id == project_id, Finding.is_false_positive == False)
+        select(Finding).where(
+            Finding.project_id == project_id,
+            Finding.is_false_positive == False,
+            Finding.deleted_at == None,
+        )
         .order_by(Finding.severity)
     )
     findings = result.scalars().all()
@@ -147,9 +159,9 @@ async def client_mark_fixed(project_id: int, finding_id: int, request: Request, 
 
 
 @router.post("/project/{project_id}/request-retest")
-async def client_request_retest(project_id: int, req: dict, request: Request, db: AsyncSession = Depends(get_db)):
+async def client_request_retest(project_id: int, req: RetestRequest, request: Request, db: AsyncSession = Depends(get_db)):
     await _verify_client_project(request, project_id, db)
-    finding_ids = req.get("finding_ids", [])
+    finding_ids = req.finding_ids
     for fid in finding_ids:
         finding = await db.get(Finding, fid)
         if finding and finding.project_id == project_id:

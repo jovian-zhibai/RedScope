@@ -93,6 +93,13 @@ async def init_builtin_checklists(request: Request, db: AsyncSession = Depends(g
     return {"initialized": count}
 
 
+class ChecklistResultCreate(BaseModel):
+    asset_id: int | None = None
+    item_index: int
+    result: str
+    finding_id: int | None = None
+
+
 @router.get("/checklists/{checklist_id}")
 async def get_checklist(checklist_id: int, db: AsyncSession = Depends(get_db)):
     cl = await db.get(Checklist, checklist_id)
@@ -103,15 +110,15 @@ async def get_checklist(checklist_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/checklists/{checklist_id}/results")
 async def save_checklist_result(
-    checklist_id: int, project_id: int, req: dict, _=Depends(require_project), db: AsyncSession = Depends(get_db)
+    checklist_id: int, project_id: int, req: ChecklistResultCreate, _=Depends(require_project), db: AsyncSession = Depends(get_db)
 ):
     result = ChecklistResult(
         project_id=project_id,
         checklist_id=checklist_id,
-        asset_id=req.get("asset_id"),
-        item_index=req["item_index"],
-        result=req["result"],
-        finding_id=req.get("finding_id"),
+        asset_id=req.asset_id,
+        item_index=req.item_index,
+        result=req.result,
+        finding_id=req.finding_id,
     )
     db.add(result)
     await db.flush()
@@ -182,7 +189,13 @@ async def delete_payload(payload_id: int, request: Request, db: AsyncSession = D
     return {"status": "deleted"}
 
 
-# ─── Test Notes ───────────────────────────────────────────
+# ─── Test Notes ─────────────────────────────────────────
+
+class NoteCreate(BaseModel):
+    asset_id: int | None = None
+    content: str
+    attachments: list | None = None
+
 
 @router.get("/notes")
 async def list_notes(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
@@ -198,12 +211,12 @@ async def list_notes(project_id: int, _=Depends(require_project), db: AsyncSessi
 
 
 @router.post("/notes")
-async def create_note(project_id: int, req: dict, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def create_note(project_id: int, req: NoteCreate, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     note = TestNote(
         project_id=project_id,
-        asset_id=req.get("asset_id"),
-        content=req["content"],
-        attachments=req.get("attachments"),
+        asset_id=req.asset_id,
+        content=req.content,
+        attachments=req.attachments,
     )
     db.add(note)
     await db.flush()
@@ -211,6 +224,11 @@ async def create_note(project_id: int, req: dict, _=Depends(require_project), db
 
 
 # ─── Task Assignments (Anti-collision) ────────────────────
+
+class AssignmentCreate(BaseModel):
+    asset_id: int | None = None
+    module_name: str | None = None
+    assigned_to: int | None = None
 
 @router.get("/assignments")
 async def list_assignments(project_id: int, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
@@ -227,12 +245,12 @@ async def list_assignments(project_id: int, _=Depends(require_project), db: Asyn
 
 
 @router.post("/assignments")
-async def create_assignment(project_id: int, req: dict, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
+async def create_assignment(project_id: int, req: AssignmentCreate, _=Depends(require_project), db: AsyncSession = Depends(get_db)):
     assignment = TaskAssignment(
         project_id=project_id,
-        asset_id=req.get("asset_id"),
-        module_name=req.get("module_name"),
-        assigned_to=req.get("assigned_to"),
+        asset_id=req.asset_id,
+        module_name=req.module_name,
+        assigned_to=req.assigned_to,
     )
     db.add(assignment)
     await db.flush()

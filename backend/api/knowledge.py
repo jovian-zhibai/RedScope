@@ -45,14 +45,30 @@ async def search_knowledge(
     ]}
 
 
+class KnowledgeCreate(BaseModel):
+    cve_id: str | None = None
+    cnvd_id: str | None = None
+    title: str
+    severity: str = "medium"
+    cvss_score: float | None = None
+    description: str | None = None
+    solution: str | None = None
+    affected_software: str | None = None
+    affected_vendor: str | None = None
+    affected_versions: str | None = None
+    vuln_type: str | None = None
+    weapon_stage: str | None = None
+    has_poc: bool = False
+    has_exp: bool = False
+    tags: list | None = None
+    fingerprints: list | None = None
+
+
 @router.post("")
-async def create_knowledge(req: dict, request: Request, db: AsyncSession = Depends(get_db)):
+async def create_knowledge(req: KnowledgeCreate, request: Request, db: AsyncSession = Depends(get_db)):
     if request.state.role not in ("admin", "leader"):
         raise HTTPException(403, "仅管理员/组长可添加漏洞情报")
-    allowed_fields = {"cve_id", "cnvd_id", "title", "severity", "cvss_score", "description",
-                      "solution", "affected_software", "affected_vendor", "affected_version",
-                      "vuln_type", "weapon_stage", "has_poc", "has_exp", "tags"}
-    vuln = VulnKnowledge(**{k: v for k, v in req.items() if k in allowed_fields})
+    vuln = VulnKnowledge(**req.model_dump(exclude_unset=True))
     db.add(vuln)
     await db.flush()
     return {"id": vuln.id, "title": vuln.title}

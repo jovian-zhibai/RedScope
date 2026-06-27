@@ -24,3 +24,5 @@ Thumbs.db
 *.iml
 scan_output/
 output/
+backups/
+*.sql.gz

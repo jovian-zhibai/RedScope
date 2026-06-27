@@ -1,7 +1,10 @@
 """LLM client: unified interface for calling LLM APIs (DeepSeek, Qwen, OpenAI-compatible)."""
 
+import logging
 import httpx
 from backend.config import get_settings
+
+logger = logging.getLogger("llm_client")
 
 
 class LLMClient:
@@ -56,7 +59,7 @@ def get_llm_client() -> LLMClient:
                     base_url = row.value
                 elif row.key == "llm_model" and row.value:
                     model = row.value
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to load LLM settings from DB: {e}")
 
     return LLMClient(api_key=api_key, base_url=base_url, model=model)

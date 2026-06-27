@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 from backend.database import get_db
 from backend.core.rbac import require_project
 from backend.models.scan_task import ScanTask
@@ -132,8 +133,8 @@ async def stop_scan(project_id: int, scan_id: int, _=Depends(require_project), d
                 try:
                     await client.delete(f"{runner_url}/jobs/{run.runner_job_id}", headers=headers)
                     stopped += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.getLogger("scanning").warning(f"Failed to stop runner job {run.runner_job_id}: {e}")
             run.status = "failed"
             run.error_message = "用户手动停止"
 

@@ -7,9 +7,12 @@ from backend.models.operational import ProxyNode
 
 
 class ProxyRoute:
-    def __init__(self, proxy_url: str, chain: list[str]):
+    def __init__(self, proxy_url: str, chain: list[str], username: str = "", password: str = ""):
         self.proxy_url = proxy_url
         self.chain = chain
+        # Store credentials separately to avoid leaking in URL/logs
+        self.username = username
+        self.password = password
 
 
 class ProxyRouter:
@@ -23,14 +26,15 @@ class ProxyRouter:
         for node in self.nodes.values():
             if self._target_in_cidrs(target, node.reachable_cidrs):
                 chain = self._build_chain(node)
-                auth = ""
+                username = ""
+                password = ""
                 if node.username_enc:
                     from backend.utils.crypto import decrypt_value
                     username = decrypt_value(node.username_enc)
                     password = decrypt_value(node.password_enc) if node.password_enc else ""
-                    auth = f"{username}:{password}@" if password else f"{username}@"
-                proxy_url = f"{node.proxy_type}://{auth}{node.host}:{node.port}"
-                return ProxyRoute(proxy_url=proxy_url, chain=chain)
+                # Build proxy URL without credentials; pass them separately
+                proxy_url = f"{node.proxy_type}://{node.host}:{node.port}"
+                return ProxyRoute(proxy_url=proxy_url, chain=chain, username=username, password=password)
         return None
 
     def _target_in_cidrs(self, target: str, cidrs: list) -> bool:

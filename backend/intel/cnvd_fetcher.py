@@ -97,7 +97,7 @@ def import_from_json(json_path: str):
 
             ALLOWED_IMPORT_FIELDS = {"cve_id", "cnvd_id", "title", "severity", "cvss_score",
                                      "description", "solution", "affected_software", "affected_vendor",
-                                     "affected_version", "vuln_type", "weapon_stage", "has_poc", "has_exp", "tags"}
+                                     "affected_versions", "vuln_type", "weapon_stage", "has_poc", "has_exp", "tags", "fingerprints", "published_at"}
             vuln = VulnKnowledge(**{k: v2 for k, v2 in v.items() if k in ALLOWED_IMPORT_FIELDS})
             vuln.source = "cnvd_import"
             db.add(vuln)
