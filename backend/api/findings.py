@@ -5,6 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.core.rbac import require_project
 from backend.models.finding import Finding
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -190,10 +193,11 @@ async def rescan_finding(project_id: int, finding_id: int, _=Depends(require_pro
     from backend.tasks.scan_worker import run_scan_task
     try:
         run_scan_task.delay(task.id)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Celery dispatch failed for retest ({e}), running in thread pool")
         import asyncio
         loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, run_scan_task, task.id)
+        loop.run_in_executor(None, run_scan_task.run, task.id)
 
     return {"scan_id": task.id, "target": host, "message": "复测任务已创建"}
 
@@ -209,7 +213,7 @@ async def link_findings_to_assets(project_id: int, _=Depends(require_project), d
     )
     findings = unlinked.scalars().all()
 
-    assets_result = await db.execute(select(Asset).where(Asset.project_id == project_id))
+    assets_result = await db.execute(select(Asset).where(Asset.project_id == project_id, Asset.deleted_at == None))
     assets = assets_result.scalars().all()
 
     asset_by_ip_port = {}

@@ -45,9 +45,11 @@ onMounted(() => {
 
   const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const token = localStorage.getItem('token')
-  ws = new WebSocket(`${wsProtocol}//${location.host}/ws/terminal/${props.sessionId}?token=${token}`)
+  ws = new WebSocket(`${wsProtocol}//${location.host}/ws/terminal/${props.sessionId}`)
 
   ws.onopen = () => {
+    // Send token as first message instead of URL param (avoids token in browser history/logs)
+    ws.send(token)
     terminal.write('\r\n\x1b[32m[RedScope Terminal]\x1b[0m 已连接到后端容器\r\n\x1b[33m提示: 如需连接宿主机，请使用 ssh user@host.docker.internal\x1b[0m\r\n\r\n')
     sendResize()
   }

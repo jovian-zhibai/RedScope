@@ -153,9 +153,13 @@ const load = async () => {
 }
 
 const addAsset = async () => {
-  await api.post(`/projects/${pid}/assets`, form.value)
-  showAdd.value = false
-  await load()
+  if (!form.value.host) { ElMessage.warning('请输入主机地址'); return }
+  try {
+    await api.post(`/projects/${pid}/assets`, form.value)
+    showAdd.value = false
+    ElMessage.success('资产已添加')
+    await load()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '添加失败') }
 }
 
 const openDetail = (row) => {
@@ -164,10 +168,14 @@ const openDetail = (row) => {
 }
 
 const deleteAsset = async (row) => {
-  await ElMessageBox.confirm(`确认删除资产「${row.host}」？`, '删除确认', { type: 'warning' })
-  await api.delete(`/projects/${pid}/assets/${row.id}`)
-  ElMessage.success('已删除')
-  await load()
+  try {
+    await ElMessageBox.confirm(`确认删除资产「${row.host}」？`, '删除确认', { type: 'warning' })
+    await api.delete(`/projects/${pid}/assets/${row.id}`)
+    ElMessage.success('已删除')
+    await load()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error('删除失败')
+  }
 }
 
 const quickScan = async (asset, strategy = 'quick') => {

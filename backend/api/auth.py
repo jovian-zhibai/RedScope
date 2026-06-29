@@ -336,8 +336,8 @@ async def get_audit_logs(request: Request, db: AsyncSession = Depends(get_db)):
     logs = result.scalars().all()
     return {"items": [
         {"id": l.id, "user_id": l.user_id, "action": l.action,
-         "target_type": l.target_type, "detail": l.detail,
-         "ip_address": l.ip_address, "severity": l.severity,
+         "target_type": l.target, "detail": l.detail,
+         "ip_address": l.ip_address, "severity": (l.detail or {}).get("severity", "info"),
          "created_at": l.created_at.isoformat() if l.created_at else None}
         for l in logs
     ]}

@@ -49,3 +49,22 @@ require_manager = RequireRole("manager")
 require_engineer = RequireRole("engineer")
 require_viewer = RequireRole("viewer")
 require_project = RequireProjectAccess()
+
+
+async def verify_project_access(request: Request, project_id: int, db) -> None:
+    """Inline project access check for endpoints where project_id comes from request body.
+    Raises HTTPException(403) if the user has no access to the project."""
+    role = getattr(request.state, "role", "viewer")
+    if role == "admin":
+        return
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(401, "未登录")
+    from backend.models.project import Project
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404, "项目不存在")
+    if project.created_by != user_id:
+        tenant_id = getattr(request.state, "tenant_id", None)
+        if not tenant_id or project.tenant_id != tenant_id:
+            raise HTTPException(403, "无权访问该项目")

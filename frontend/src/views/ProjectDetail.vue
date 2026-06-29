@@ -268,7 +268,7 @@
       </el-tab-pane>
 
       <el-tab-pane label="作战 & 测试" name="operations">
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;">
           <div class="card onboard-step" @click="$router.push(p(`/projects/${project.id}/operations`))">
             <el-icon :size="28" style="margin-bottom: 8px; color: var(--rs-accent);"><Aim /></el-icon>
             <div style="font-weight: bold;">作战管理</div>
@@ -391,7 +391,7 @@ const opsecWarnings = ref([])
 const showRecordForm = ref(false)
 const recordForm = ref({ title: '', commands_text: '', duration_seconds: 0, is_playbook: false, playbook_name: '' })
 
-const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token')}` }
+const uploadHeaders = computed(() => ({ Authorization: `Bearer ${localStorage.getItem('token')}` }))
 const quickTargets = ref('')
 const quickScanning = ref(false)
 
@@ -435,9 +435,13 @@ onMounted(async () => {
 })
 
 const emergencyStop = async () => {
-  await ElMessageBox.confirm('确认紧急停止所有扫描任务？', '紧急停止', { type: 'warning' })
-  await api.post(`/projects/${pid}/emergency-stop`)
-  ElMessage.success('所有任务已停止')
+  try {
+    await ElMessageBox.confirm('确认紧急停止所有扫描任务？', '紧急停止', { type: 'warning' })
+    await api.post(`/projects/${pid}/emergency-stop`)
+    ElMessage.success('所有任务已停止')
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error('停止失败')
+  }
 }
 
 const onImportSuccess = (res) => {
@@ -463,8 +467,25 @@ const runScoreRisks = async () => {
   ElMessage.success(res.message)
 }
 
-const exportFindings = () => { window.open(`/api/v1/projects/${pid}/export/findings-csv?token=${localStorage.getItem('token')}`, '_blank') }
-const downloadReport = (reportId) => { window.open(`/api/v1/projects/${pid}/reports/${reportId}/download?token=${localStorage.getItem('token')}`, '_blank') }
+const downloadViaFetch = async (url, filename) => {
+  try {
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const blob = await resp.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(blobUrl)
+  } catch (e) {
+    console.error('Download failed:', e)
+  }
+}
+const exportFindings = () => { downloadViaFetch(`/api/v1/projects/${pid}/export/findings-csv`, 'findings.csv') }
+const downloadReport = (reportId) => { downloadViaFetch(`/api/v1/projects/${pid}/reports/${reportId}/download`, `report-${reportId}.pdf`) }
 
 const showReportPreview = ref(false)
 const reportPreview = ref(null)
@@ -606,7 +627,15 @@ const onScreenshotUploaded = async (res) => {
 }
 
 const previewScreenshot = (s) => {
-  window.open(s.view_url, '_blank')
+  const token = localStorage.getItem('token')
+  fetch(s.view_url, { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob() })
+    .then(blob => {
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    })
+    .catch(() => ElMessage.error('预览加载失败'))
 }
 
 const saveRecording = async () => {

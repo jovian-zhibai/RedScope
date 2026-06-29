@@ -53,7 +53,8 @@ async def list_assets(
     if importance:
         query = query.where(Asset.importance == importance)
     if search:
-        pattern = f"%{search}%"
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
         query = query.where(Asset.host.ilike(pattern) | Asset.application.ilike(pattern) | Asset.server.ilike(pattern))
 
     paged = await paginate(db, query, page, page_size)

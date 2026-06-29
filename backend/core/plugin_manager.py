@@ -1,10 +1,13 @@
 """Plugin manager: loads, validates, and manages tool plugins."""
 
 import os
+import logging
 from pathlib import Path
 from dataclasses import dataclass, field
 import yaml
 from backend.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -65,7 +68,7 @@ class PluginManager:
                     config = self._parse_yaml(yaml_file)
                     self._plugins[config.name] = config
                 except Exception as e:
-                    print(f"Failed to load plugin {yaml_file}: {e}")
+                    logger.warning(f"Failed to load plugin {yaml_file}: {e}")
 
     def _parse_yaml(self, path: Path) -> PluginConfig:
         with open(path) as f:

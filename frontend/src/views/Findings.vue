@@ -180,7 +180,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../stores/api'
@@ -201,7 +201,7 @@ const form = ref({ title: '', vuln_type: 'sqli', severity: 'high', description: 
 const showRiskAccept = ref(false)
 const riskForm = ref({ client_name: '', accepted_by: '', reason: '' })
 const findingScreenshots = ref([])
-const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token')}` }
+const uploadHeaders = computed(() => ({ Authorization: `Bearer ${localStorage.getItem('token')}` }))
 const aiGenerating = ref(false)
 const rescanning = ref(false)
 
@@ -214,7 +214,17 @@ const rescanFinding = async (findingId) => {
   finally { rescanning.value = false }
 }
 
-const previewImage = (url) => { window.open(url, '_blank') }
+const previewImage = (url) => {
+  const token = localStorage.getItem('token')
+  fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob() })
+    .then(blob => {
+      const blobUrl = URL.createObjectURL(blob)
+      window.open(blobUrl, '_blank')
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000)
+    })
+    .catch(() => ElMessage.error('预览加载失败'))
+}
 
 const pageSize = ref(20)
 const currentPage = ref(1)
@@ -300,36 +310,50 @@ const acceptRisk = async () => {
 const onSelect = (rows) => { selectedIds.value = rows.map(r => r.id) }
 
 const updateStatus = async (id, status) => {
-  await api.put(`/projects/${pid}/findings/${id}`, { fix_status: status })
-  detailFinding.value.fix_status = status
-  await load()
+  try {
+    await api.put(`/projects/${pid}/findings/${id}`, { fix_status: status })
+    detailFinding.value.fix_status = status
+    await load()
+  } catch (e) { ElMessage.error('状态更新失败') }
 }
 
 const deleteFinding = async (row) => {
-  await ElMessageBox.confirm(`确认删除漏洞「${row.title}」？此操作不可恢复。`, '删除确认', { type: 'warning' })
-  await api.delete(`/projects/${pid}/findings/${row.id}`)
-  ElMessage.success('已删除')
-  showDetail.value = false
-  detailFinding.value = null
-  await load()
+  try {
+    await ElMessageBox.confirm(`确认删除漏洞「${row.title}」？此操作不可恢复。`, '删除确认', { type: 'warning' })
+    await api.delete(`/projects/${pid}/findings/${row.id}`)
+    ElMessage.success('已删除')
+    showDetail.value = false
+    detailFinding.value = null
+    await load()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error('删除失败')
+  }
 }
 
 const batchMarkFixed = async () => {
-  await ElMessageBox.confirm(`确认将 ${selectedIds.value.length} 个漏洞标记为已修复？`, '批量操作', { type: 'info' })
-  for (const id of selectedIds.value) {
-    await api.put(`/projects/${pid}/findings/${id}`, { fix_status: 'fixed' })
+  try {
+    await ElMessageBox.confirm(`确认将 ${selectedIds.value.length} 个漏洞标记为已修复？`, '批量操作', { type: 'info' })
+    for (const id of selectedIds.value) {
+      await api.put(`/projects/${pid}/findings/${id}`, { fix_status: 'fixed' })
+    }
+    ElMessage.success('已批量标记')
+    await load()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error('批量标记失败')
   }
-  ElMessage.success('已批量标记')
-  await load()
 }
 
 const batchMarkFP = async () => {
-  await ElMessageBox.confirm(`确认将 ${selectedIds.value.length} 个漏洞标记为误报？`, '批量操作', { type: 'warning' })
-  for (const id of selectedIds.value) {
-    await api.put(`/projects/${pid}/findings/${id}`, { is_false_positive: true })
+  try {
+    await ElMessageBox.confirm(`确认将 ${selectedIds.value.length} 个漏洞标记为误报？`, '批量操作', { type: 'warning' })
+    for (const id of selectedIds.value) {
+      await api.put(`/projects/${pid}/findings/${id}`, { is_false_positive: true })
+    }
+    ElMessage.success('已批量标记')
+    await load()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error('批量标记失败')
   }
-  ElMessage.success('已批量标记')
-  await load()
 }
 
 onMounted(load)

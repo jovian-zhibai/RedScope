@@ -244,9 +244,11 @@ const createScan = async () => {
 }
 
 const stopScan = async (id) => {
-  await api.post(`/projects/${pid}/scans/${id}/stop`)
-  ElMessage.success('已停止')
-  await load()
+  try {
+    await api.post(`/projects/${pid}/scans/${id}/stop`)
+    ElMessage.success('已停止')
+    await load()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '停止失败') }
 }
 
 const openDetail = async (row) => {

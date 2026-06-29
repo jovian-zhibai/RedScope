@@ -69,11 +69,16 @@ async def preview_report(project_id: int, report_id: int, _=Depends(require_proj
 
     project = await db.get(Project, project_id)
     findings_result = await db.execute(
-        select(Finding).where(Finding.project_id == project_id, Finding.is_false_positive == False)
-        .order_by(Finding.severity)
+        select(Finding).where(
+            Finding.project_id == project_id,
+            Finding.is_false_positive == False,
+            Finding.deleted_at == None,
+        ).order_by(Finding.severity)
     )
     findings = findings_result.scalars().all()
-    assets_result = await db.execute(select(Asset).where(Asset.project_id == project_id))
+    assets_result = await db.execute(
+        select(Asset).where(Asset.project_id == project_id, Asset.deleted_at == None)
+    )
     assets = assets_result.scalars().all()
 
     sev_counts = {}

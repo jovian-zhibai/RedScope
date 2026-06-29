@@ -98,7 +98,7 @@ async def create_scan(project_id: int, req: ScanCreate, _=Depends(require_projec
         logger.warning(f"Celery dispatch failed ({e}), running scan synchronously")
         import asyncio
         loop = asyncio.get_event_loop()
-        loop.run_in_executor(None, run_scan_task, task.id)
+        loop.run_in_executor(None, run_scan_task.run, task.id)
 
     result = {"id": task.id, "status": "pending", "message": "扫描任务已创建并开始执行"}
     if cloud_warnings:
@@ -182,7 +182,14 @@ async def get_scan_logs(project_id: int, scan_id: int, job_id: str, _=Depends(re
         raise HTTPException(404, "任务不存在")
 
     from pathlib import Path
-    output_dir = Path("/app/output") / job_id
+    # Prevent path traversal: reject .., /, \ in job_id
+    if ".." in job_id or "/" in job_id or "\\" in job_id:
+        raise HTTPException(400, "job_id 格式非法")
+    output_base = Path("/app/output").resolve()
+    output_dir = (output_base / job_id).resolve()
+    if not str(output_dir).startswith(str(output_base)):
+        raise HTTPException(403, "非法路径")
+
     stderr_file = output_dir / "stderr.log"
     stdout_file = output_dir / "stdout.log"
 

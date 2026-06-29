@@ -1,6 +1,7 @@
 """Work sessions, screenshots, terminal recordings, risk acceptance, project templates API."""
 
 from datetime import datetime
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -10,6 +11,8 @@ from backend.core.rbac import require_project
 from backend.models.operational import (
     WorkSession, Screenshot, TerminalRecording, RiskAcceptance, ProjectTemplate,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -64,7 +67,8 @@ async def end_session(project_id: int, session_id: int, request: Request, _=Depe
             f"活动记录:\n{activities_text}"
         )
         session.summary = await chat_with_assistant(summary_prompt)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Session summary generation failed: {e}")
         session.summary = f"扫描 {session.scans_run} 次，发现 {session.findings_added} 个漏洞，{session.notes_count} 条笔记"
 
     await db.flush()

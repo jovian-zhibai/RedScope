@@ -89,7 +89,8 @@ async def health_check():
         async with async_session() as session:
             await session.execute(text("SELECT 1"))
         status["database"] = "ok"
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Health check database failed: {e}")
         status["database"] = "error"
 
     try:
@@ -98,7 +99,8 @@ async def health_check():
         await r.ping()
         await r.aclose()
         status["redis"] = "ok"
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Health check redis failed: {e}")
         status["redis"] = "error"
 
     all_ok = status.get("database") == "ok" and status.get("redis") == "ok"
@@ -200,10 +202,17 @@ async def dashboard_summary(request: Request, db: AsyncSession = Depends(get_db)
                 Finding.project_id.in_(project_ids), Finding.deleted_at == None
             ).order_by(Finding.created_at.desc()).limit(10)
         )
-        for f in findings_result.scalars().all():
-            host = None
-            if f.asset_id:
-                host = await db.scalar(select(Asset.host).where(Asset.id == f.asset_id))
+        findings_list = findings_result.scalars().all()
+        # Batch pre-fetch asset hosts to avoid N+1 queries
+        asset_ids = list({f.asset_id for f in findings_list if f.asset_id})
+        host_map = {}
+        if asset_ids:
+            hosts_result = await db.execute(
+                select(Asset.id, Asset.host).where(Asset.id.in_(asset_ids))
+            )
+            host_map = {row.id: row.host for row in hosts_result.all()}
+        for f in findings_list:
+            host = host_map.get(f.asset_id) if f.asset_id else None
             recent_findings_data.append({
                 "id": f.id, "title": f.title, "severity": f.severity,
                 "host": host, "found_by": f.found_by, "project_id": f.project_id,
@@ -384,14 +393,17 @@ async def global_search(q: str = "", request: Request = None, db: AsyncSession =
     project_ids = [p.id for p in proj_rows]
     projects_list = [{"id": p.id, "name": p.name, "type": "project"} for p in proj_rows]
 
-    asset_query = select(Asset).where(Asset.host.ilike(pattern) | Asset.application.ilike(pattern))
+    asset_query = select(Asset).where(
+        (Asset.host.ilike(pattern) | Asset.application.ilike(pattern)),
+        Asset.deleted_at == None,
+    )
     if not is_admin and project_ids:
         asset_query = asset_query.where(Asset.project_id.in_(project_ids))
     elif not is_admin:
         asset_query = asset_query.where(Asset.project_id == -1)
     assets_result = await db.execute(asset_query.limit(5))
 
-    finding_query = select(Finding).where(Finding.title.ilike(pattern))
+    finding_query = select(Finding).where(Finding.title.ilike(pattern), Finding.deleted_at == None)
     if not is_admin and project_ids:
         finding_query = finding_query.where(Finding.project_id.in_(project_ids))
     elif not is_admin:

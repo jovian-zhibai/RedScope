@@ -11,6 +11,19 @@ from backend.core.rbac import require_manager
 
 router = APIRouter()
 
+
+def _check_order_access(request: Request, order) -> None:
+    """Verify the current user can access this work order."""
+    role = getattr(request.state, "role", "viewer")
+    if role == "admin":
+        return
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(401, "未登录")
+    if order.created_by != user_id and order.assigned_to != user_id:
+        raise HTTPException(403, "无权访问该工单")
+
+
 VALID_TRANSITIONS = {
     "pending": ["approved", "rejected"],
     "approved": ["in_progress"],
@@ -84,6 +97,8 @@ async def get_order(order_id: int, request: Request, db: AsyncSession = Depends(
     if not order:
         raise HTTPException(404, "工单不存在")
 
+    _check_order_access(request, order)
+
     comments_result = await db.execute(
         select(WorkOrderComment).where(WorkOrderComment.order_id == order_id)
         .order_by(WorkOrderComment.created_at)
@@ -151,6 +166,8 @@ async def add_comment(order_id: int, req: CommentCreate, request: Request, db: A
     order = await db.get(WorkOrder, order_id)
     if not order:
         raise HTTPException(404, "工单不存在")
+
+    _check_order_access(request, order)
 
     comment = WorkOrderComment(
         order_id=order_id,

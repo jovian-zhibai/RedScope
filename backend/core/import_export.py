@@ -72,7 +72,7 @@ def import_nessus_xml(db: Session, project_id: int, xml_content: str) -> int:
 
 def export_findings_csv(db: Session, project_id: int) -> str:
     findings = db.execute(
-        select(Finding).where(Finding.project_id == project_id).order_by(Finding.severity)
+        select(Finding).where(Finding.project_id == project_id, Finding.deleted_at == None).order_by(Finding.severity)
     ).scalars().all()
 
     output = io.StringIO()
@@ -94,8 +94,8 @@ def export_findings_csv(db: Session, project_id: int) -> str:
 def export_project_archive(db: Session, project_id: int) -> dict:
     from backend.models.project import Project
     project = db.get(Project, project_id)
-    assets = db.execute(select(Asset).where(Asset.project_id == project_id)).scalars().all()
-    findings = db.execute(select(Finding).where(Finding.project_id == project_id)).scalars().all()
+    assets = db.execute(select(Asset).where(Asset.project_id == project_id, Asset.deleted_at == None)).scalars().all()
+    findings = db.execute(select(Finding).where(Finding.project_id == project_id, Finding.deleted_at == None)).scalars().all()
 
     return {
         "project": {"id": project.id, "name": project.name, "mode": project.mode, "client_name": project.client_name},

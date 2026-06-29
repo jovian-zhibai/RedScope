@@ -64,6 +64,11 @@ class CustomPluginCreate(BaseModel):
     description: str = ""
     output_format: str = "text"
     inputs: list = []
+    run_mode: str = "docker"
+    output_path: str = "/output/result.json"
+    proxy_supported: bool = False
+    proxy_flag: str = ""
+    local_binary: str = ""
 
 
 class PluginImportBundle(BaseModel):
@@ -100,32 +105,32 @@ async def add_custom_plugin(req: CustomPluginCreate, _=Depends(require_manager))
     if plugin_file.exists():
         raise HTTPException(400, f"工具 {name} 已存在")
 
-    run_mode = req.get("run_mode", "docker")
+    run_mode = req.run_mode or "docker"
     yaml_plugin = {
         "name": name,
-        "display_name": req.get("display_name", name),
+        "display_name": req.display_name or name,
         "version": "1.0.0",
-        "description": req.get("description", ""),
-        "category": req.get("category", "custom"),
+        "description": req.description,
+        "category": req.category,
         "inputs": [
             {"name": "target", "type": "string", "required": True, "description": "目标"},
             {"name": "extra_args", "type": "string", "required": False},
         ],
-        "command": req.get("command", ""),
+        "command": req.command,
         "output": {
-            "format": req.get("output_format", "json"),
-            "path": req.get("output_path", "/output/result.json"),
+            "format": req.output_format or "json",
+            "path": req.output_path,
         },
         "proxy": {
-            "supported": req.get("proxy_supported", False),
-            "flag": req.get("proxy_flag", ""),
+            "supported": req.proxy_supported,
+            "flag": req.proxy_flag,
         },
     }
 
     if run_mode == "docker":
-        yaml_plugin["docker"] = {"image": req.get("docker_image", "")}
+        yaml_plugin["docker"] = {"image": req.docker_image}
     else:
-        yaml_plugin["local"] = {"binary": req.get("local_binary", ""), "check_command": f"{req.get('local_binary', '').split()[0]} --help"}
+        yaml_plugin["local"] = {"binary": req.local_binary, "check_command": f"{req.local_binary.split()[0] if req.local_binary else ''} --help"}
 
     yaml_content = {"plugin": yaml_plugin}
 

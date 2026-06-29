@@ -1,10 +1,13 @@
 """NVD/CVE vulnerability fetcher: syncs latest CVEs from NVD API."""
 
 import httpx
+import logging
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from backend.database_sync import SyncSession
 from backend.models.vuln_knowledge import VulnKnowledge
+
+logger = logging.getLogger(__name__)
 
 NVD_API = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
@@ -24,7 +27,7 @@ def fetch_latest(days: int = 7, keyword: str = ""):
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
-        print(f"NVD fetch failed: {e}")
+        logger.warning(f"NVD fetch failed: {e}")
         return
 
     with SyncSession() as db:

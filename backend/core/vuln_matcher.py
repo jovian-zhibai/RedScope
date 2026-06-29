@@ -42,8 +42,9 @@ def _query_candidates(db: Session, asset: Asset) -> list[VulnKnowledge]:
     conditions = []
     for term in search_terms:
         term_lower = term.lower().strip()
-        conditions.append(VulnKnowledge.affected_software.ilike(f"%{term_lower}%"))
-        conditions.append(VulnKnowledge.title.ilike(f"%{term_lower}%"))
+        escaped = term_lower.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        conditions.append(VulnKnowledge.affected_software.ilike(f"%{escaped}%"))
+        conditions.append(VulnKnowledge.title.ilike(f"%{escaped}%"))
 
     if not conditions:
         return []
@@ -165,7 +166,7 @@ def _extract_version_nums(version: str) -> tuple:
 
 def batch_match_project(db: Session, project_id: int) -> list[MatchResult]:
     assets = db.execute(
-        select(Asset).where(Asset.project_id == project_id, Asset.is_alive == True)
+        select(Asset).where(Asset.project_id == project_id, Asset.is_alive == True, Asset.deleted_at == None)
     ).scalars().all()
 
     all_results = []

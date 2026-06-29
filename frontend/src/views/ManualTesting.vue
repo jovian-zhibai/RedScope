@@ -212,15 +212,22 @@ const loadPayloads = async () => {
 }
 
 const createPayload = async () => {
-  await api.post('/testing/payloads', payloadForm.value)
-  showPayloadForm.value = false
-  payloadForm.value = { name: '', category: 'sqli', content: '', applicable_scene: '' }
-  await loadPayloads()
+  if (!payloadForm.value.name || !payloadForm.value.content) { ElMessage.warning('请填写名称和Payload内容'); return }
+  try {
+    await api.post('/testing/payloads', payloadForm.value)
+    showPayloadForm.value = false
+    payloadForm.value = { name: '', category: 'sqli', content: '', applicable_scene: '' }
+    ElMessage.success('Payload 已添加')
+    await loadPayloads()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '添加失败') }
 }
 
 const deletePayload = async (id) => {
-  await api.delete(`/testing/payloads/${id}`)
-  await loadPayloads()
+  try {
+    await api.delete(`/testing/payloads/${id}`)
+    ElMessage.success('已删除')
+    await loadPayloads()
+  } catch (e) { ElMessage.error('删除失败') }
 }
 
 const copyPayload = (content) => {
@@ -238,9 +245,12 @@ const loadNotes = async () => {
 }
 
 const createNote = async () => {
-  await api.post(`/testing/notes?project_id=${pid}`, { content: newNote.value })
-  newNote.value = ''
-  await loadNotes()
+  try {
+    await api.post(`/testing/notes?project_id=${pid}`, { content: newNote.value })
+    newNote.value = ''
+    ElMessage.success('笔记已添加')
+    await loadNotes()
+  } catch (e) { ElMessage.error('添加失败') }
 }
 
 // Assignments
@@ -254,10 +264,14 @@ const loadAssignments = async () => {
 }
 
 const createAssignment = async () => {
-  await api.post(`/testing/assignments?project_id=${pid}`, assignForm.value)
-  showAssignForm.value = false
-  assignForm.value = { module_name: '', assigned_to: '' }
-  await loadAssignments()
+  if (!assignForm.value.module_name) { ElMessage.warning('请填写模块名称'); return }
+  try {
+    await api.post(`/testing/assignments?project_id=${pid}`, assignForm.value)
+    showAssignForm.value = false
+    assignForm.value = { module_name: '', assigned_to: '' }
+    ElMessage.success('任务已分配')
+    await loadAssignments()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '分配失败') }
 }
 
 const completeAssignment = async (id) => {

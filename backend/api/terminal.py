@@ -23,10 +23,16 @@ TERMINAL_IMAGE = os.environ.get("TERMINAL_IMAGE", "python:3.12-slim")
 
 
 async def verify_ws_token(websocket: WebSocket) -> dict | None:
+    """Verify JWT token from query params or first WebSocket message."""
     token = websocket.query_params.get("token")
     if not token:
-        await websocket.close(code=4001, reason="缺少认证Token")
-        return None
+        # Accept connection first, then wait for token as first message
+        await websocket.accept()
+        try:
+            token = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+        except (asyncio.TimeoutError, Exception):
+            await websocket.close(code=4001, reason="缺少认证Token")
+            return None
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         return {"user_id": int(payload.get("sub", 0)), "username": payload.get("username", "")}
@@ -78,7 +84,11 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         await websocket.close(code=4002, reason=f"终端会话数已达上限({MAX_SESSIONS_PER_USER})")
         return
 
-    await websocket.accept()
+    # Only accept if not already accepted during token-via-message flow
+    if not websocket.query_params.get("token"):
+        pass  # Already accepted in verify_ws_token
+    else:
+        await websocket.accept()
     namespaced_id = f"u{user_id}_{session_id}"
     logger.info(f"Terminal opened: user={user['username']} session={session_id}")
 

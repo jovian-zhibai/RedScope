@@ -155,16 +155,21 @@ const showScore = ref(false)
 const scoreForm = ref({ team: 'red', category: 'vuln_high', title: '', points: 100, description: '' })
 
 const loadExercises = async () => {
-  const res = await api.get(`/projects/${pid}/redblue`)
-  exercises.value = res.items || []
+  try {
+    const res = await api.get(`/projects/${pid}/redblue`)
+    exercises.value = res.items || []
+  } catch (e) { ElMessage.error('加载演练列表失败') }
 }
 
 const createExercise = async () => {
-  await api.post(`/projects/${pid}/redblue`, createForm.value)
-  showCreate.value = false
-  createForm.value = { name: '', red_team_name: '红队', blue_team_name: '蓝队' }
-  await loadExercises()
-  ElMessage.success('演练已创建')
+  if (!createForm.value.name) { ElMessage.warning('请输入演练名称'); return }
+  try {
+    await api.post(`/projects/${pid}/redblue`, createForm.value)
+    showCreate.value = false
+    createForm.value = { name: '', red_team_name: '红队', blue_team_name: '蓝队' }
+    await loadExercises()
+    ElMessage.success('演练已创建')
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '创建失败') }
 }
 
 const openScoreboard = async (exercise) => {
@@ -173,11 +178,14 @@ const openScoreboard = async (exercise) => {
 }
 
 const submitScore = async () => {
-  await api.post(`/projects/${pid}/redblue/${currentExercise.value.id}/score`, scoreForm.value)
-  showScore.value = false
-  scoreForm.value = { team: 'red', category: 'vuln_high', title: '', points: 100, description: '' }
-  scoreboard.value = await api.get(`/projects/${pid}/redblue/${currentExercise.value.id}/scoreboard`)
-  ElMessage.success('得分已提交')
+  if (!scoreForm.value.title) { ElMessage.warning('请填写得分事项'); return }
+  try {
+    await api.post(`/projects/${pid}/redblue/${currentExercise.value.id}/score`, scoreForm.value)
+    showScore.value = false
+    scoreForm.value = { team: 'red', category: 'vuln_high', title: '', points: 100, description: '' }
+    scoreboard.value = await api.get(`/projects/${pid}/redblue/${currentExercise.value.id}/scoreboard`)
+    ElMessage.success('得分已提交')
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '提交失败') }
 }
 
 const endExercise = async () => {

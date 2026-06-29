@@ -213,7 +213,7 @@ async def _run_scan_task_async(task_self, scan_task_id: int):
             from backend.core.risk_scorer import compute_risk_score
             from backend.models.asset import Asset as AssetModel
             findings_to_score = db.execute(
-                select(Finding).where(Finding.project_id == task.project_id, Finding.combined_risk_score == None)
+                select(Finding).where(Finding.project_id == task.project_id, Finding.combined_risk_score == None, Finding.deleted_at == None)
             ).scalars().all()
             for f in findings_to_score:
                 asset = db.get(AssetModel, f.asset_id) if f.asset_id else None

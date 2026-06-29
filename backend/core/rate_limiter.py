@@ -1,8 +1,11 @@
 """Rate limiter: prevents brute-force and resource exhaustion. Uses Redis for multi-instance support."""
 
 import time
+import logging
 from collections import defaultdict
 from fastapi import Request, HTTPException
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimiter:
@@ -17,7 +20,8 @@ class RateLimiter:
                 from backend.config import get_settings
                 self._redis = redis_lib.from_url(get_settings().redis_url)
                 self._redis.ping()
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Rate limiter Redis init failed, using in-memory fallback: {e}")
                 self._redis = False
         return self._redis if self._redis else None
 

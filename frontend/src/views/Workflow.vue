@@ -110,7 +110,15 @@ const load = async () => {
     orders.value = res.items || []
   } catch (e) { ElMessage.error('加载失败') }
 }
-const create = async () => { await api.post('/workflow', form.value); showCreate.value = false; ElMessage.success('工单已创建'); await load() }
+const create = async () => {
+  if (!form.value.title) { ElMessage.warning('请输入工单标题'); return }
+  try {
+    await api.post('/workflow', form.value)
+    showCreate.value = false
+    ElMessage.success('工单已创建')
+    await load()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '创建失败') }
+}
 const selectOrder = async (row) => {
   try {
     const detail = await api.get(`/workflow/${row.id}`)
@@ -123,9 +131,11 @@ const selectOrder = async (row) => {
   showDetail.value = true
 }
 const transition = async (status) => {
-  await api.put(`/workflow/${selectedOrder.value.id}/transition`, { new_status: status })
-  showDetail.value = false
-  await load()
+  try {
+    await api.put(`/workflow/${selectedOrder.value.id}/transition`, { new_status: status })
+    showDetail.value = false
+    await load()
+  } catch (e) { ElMessage.error('状态变更失败') }
 }
 const addComment = async () => {
   if (!newComment.value.trim()) return

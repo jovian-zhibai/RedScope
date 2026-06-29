@@ -192,6 +192,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import api from '../stores/api'
 
 const route = useRoute()
@@ -211,33 +212,57 @@ const hostForm = ref({ ip: '', hostname: '', access_level: 'root', shell_type: '
 const lootForm = ref({ loot_type: 'database', title: '', impact: 'high', description: '' })
 
 const loadAll = async () => {
-  const [p, c, h, t, cl, l] = await Promise.all([
-    api.get(`/projects/${pid}/ops/proxy`), api.get(`/projects/${pid}/ops/credentials`),
-    api.get(`/projects/${pid}/ops/hosts`), api.get(`/projects/${pid}/ops/timeline`),
-    api.get(`/projects/${pid}/ops/cleanup`), api.get(`/projects/${pid}/ops/loots`),
-  ])
-  proxies.value = p.items || []; credentials.value = c.items || []; hosts.value = h.items || []
-  timeline.value = t.items || []; cleanupItems.value = cl.items || []
-  cleanupStats.value = { total: cl.total, cleaned: cl.cleaned, progress: cl.progress }
-  loots.value = l.items || []
+  try {
+    const [p, c, h, t, cl, l] = await Promise.all([
+      api.get(`/projects/${pid}/ops/proxy`), api.get(`/projects/${pid}/ops/credentials`),
+      api.get(`/projects/${pid}/ops/hosts`), api.get(`/projects/${pid}/ops/timeline`),
+      api.get(`/projects/${pid}/ops/cleanup`), api.get(`/projects/${pid}/ops/loots`),
+    ])
+    proxies.value = p.items || []; credentials.value = c.items || []; hosts.value = h.items || []
+    timeline.value = t.items || []; cleanupItems.value = cl.items || []
+    cleanupStats.value = { total: cl.total, cleaned: cl.cleaned, progress: cl.progress }
+    loots.value = l.items || []
+  } catch (e) { ElMessage.error('加载数据失败') }
 }
 
 const addProxy = async () => {
-  const cidrs = proxyForm.value.cidrs_text.split('\n').filter(Boolean)
-  await api.post(`/projects/${pid}/ops/proxy`, { ...proxyForm.value, reachable_cidrs: cidrs })
-  showAddProxy.value = false; await loadAll()
+  try {
+    const cidrs = proxyForm.value.cidrs_text.split('\n').filter(Boolean)
+    await api.post(`/projects/${pid}/ops/proxy`, { ...proxyForm.value, reachable_cidrs: cidrs })
+    showAddProxy.value = false; ElMessage.success('节点已添加'); await loadAll()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '添加失败') }
 }
-const addCredential = async () => { await api.post(`/projects/${pid}/ops/credentials`, credForm.value); showAddCred.value = false; await loadAll() }
-const addHost = async () => { await api.post(`/projects/${pid}/ops/hosts`, hostForm.value); showAddHost.value = false; await loadAll() }
-const addLoot = async () => { await api.post(`/projects/${pid}/ops/loots`, lootForm.value); showAddLoot.value = false; await loadAll() }
-const markCleaned = async (id) => { await api.put(`/projects/${pid}/ops/cleanup/${id}/mark`); await loadAll() }
+const addCredential = async () => {
+  try {
+    await api.post(`/projects/${pid}/ops/credentials`, credForm.value)
+    showAddCred.value = false; ElMessage.success('凭据已添加'); await loadAll()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '添加失败') }
+}
+const addHost = async () => {
+  try {
+    await api.post(`/projects/${pid}/ops/hosts`, hostForm.value)
+    showAddHost.value = false; ElMessage.success('主机已添加'); await loadAll()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '添加失败') }
+}
+const addLoot = async () => {
+  try {
+    await api.post(`/projects/${pid}/ops/loots`, lootForm.value)
+    showAddLoot.value = false; ElMessage.success('战果已记录'); await loadAll()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '添加失败') }
+}
+const markCleaned = async (id) => {
+  try {
+    await api.put(`/projects/${pid}/ops/cleanup/${id}/mark`); await loadAll()
+  } catch (e) { ElMessage.error('标记失败') }
+}
 
 const openUploadFile = (host) => { uploadFileHostId.value = host.id; uploadFileForm.value = { path: '', description: '' }; showUploadFile.value = true }
 const recordUploadFile = async () => {
   if (!uploadFileForm.value.path) return
-  await api.post(`/projects/${pid}/ops/hosts/${uploadFileHostId.value}/upload-file`, uploadFileForm.value)
-  showUploadFile.value = false
-  await loadAll()
+  try {
+    await api.post(`/projects/${pid}/ops/hosts/${uploadFileHostId.value}/upload-file`, uploadFileForm.value)
+    showUploadFile.value = false; ElMessage.success('文件已记录'); await loadAll()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '记录失败') }
 }
 
 const tunnelTool = ref('frp')

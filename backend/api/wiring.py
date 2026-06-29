@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
-from backend.core.rbac import require_project
+from backend.core.rbac import require_project, verify_project_access
 from backend.database_sync import SyncSession
 from backend.core.error_handler import logger
 
@@ -31,7 +31,7 @@ async def match_project_vulns(project_id: int, _=Depends(require_project), db: A
     from backend.models.finding import Finding
 
     result = await db.execute(
-        select(Asset).where(Asset.project_id == project_id, Asset.is_alive == True)
+        select(Asset).where(Asset.project_id == project_id, Asset.is_alive == True, Asset.deleted_at == None)
     )
     assets = result.scalars().all()
 
@@ -97,7 +97,7 @@ async def score_project_risks(project_id: int, _=Depends(require_project), db: A
     import ipaddress
 
     result = await db.execute(
-        select(Finding).where(Finding.project_id == project_id, Finding.is_false_positive == False)
+        select(Finding).where(Finding.project_id == project_id, Finding.is_false_positive == False, Finding.deleted_at == None)
     )
     findings = result.scalars().all()
     updated = 0
@@ -404,14 +404,14 @@ async def ai_generate_report_summary(project_id: int, _=Depends(require_project)
     from backend.models.finding import Finding
     from sqlalchemy import func
 
-    total = await db.scalar(select(func.count()).where(Finding.project_id == project_id))
+    total = await db.scalar(select(func.count()).where(Finding.project_id == project_id, Finding.deleted_at == None))
     severities = {}
     for sev in ["critical", "high", "medium", "low"]:
         severities[sev] = await db.scalar(
-            select(func.count()).where(Finding.project_id == project_id, Finding.severity == sev)
+            select(func.count()).where(Finding.project_id == project_id, Finding.severity == sev, Finding.deleted_at == None)
         )
     fixed = await db.scalar(
-        select(func.count()).where(Finding.project_id == project_id, Finding.fix_status == "fixed")
+        select(func.count()).where(Finding.project_id == project_id, Finding.fix_status == "fixed", Finding.deleted_at == None)
     )
 
     summary = await generate_report_summary({
@@ -477,6 +477,10 @@ class AIScanRecommendRequest(BaseModel):
 async def ai_chat(req: AIChatRequest, request: Request, db: AsyncSession = Depends(get_db)):
     from backend.ai.assistant import chat_with_assistant
 
+    # Project access control: verify user has access to the requested project
+    if req.project_id:
+        await verify_project_access(request, req.project_id, db)
+
     msg_lower = req.message.lower()
     if any(kw in msg_lower for kw in ["检查配置", "帮我配置", "配置检查", "check config", "缺什么"]):
         return {"reply": await _check_system_config(db, req.project_id)}
@@ -488,8 +492,8 @@ async def ai_chat(req: AIChatRequest, request: Request, db: AsyncSession = Depen
         if project:
             from backend.models.finding import Finding
             from backend.models.asset import Asset
-            finding_count = await db.scalar(select(func.count()).where(Finding.project_id == req.project_id))
-            asset_count = await db.scalar(select(func.count()).where(Asset.project_id == req.project_id))
+            finding_count = await db.scalar(select(func.count()).where(Finding.project_id == req.project_id, Finding.deleted_at == None))
+            asset_count = await db.scalar(select(func.count()).where(Asset.project_id == req.project_id, Asset.deleted_at == None))
             context = f"项目: {project.name}, 模式: {project.mode}, 资产: {asset_count}, 漏洞: {finding_count}"
 
     reply = await chat_with_assistant(req.message, context, history=req.history)
@@ -531,8 +535,8 @@ async def _check_system_config(db, project_id=None):
     if project_id:
         from backend.models.asset import Asset
         from backend.models.finding import Finding
-        asset_count = await db.scalar(select(func.count()).where(Asset.project_id == project_id))
-        finding_count = await db.scalar(select(func.count()).where(Finding.project_id == project_id))
+        asset_count = await db.scalar(select(func.count()).where(Asset.project_id == project_id, Asset.deleted_at == None))
+        finding_count = await db.scalar(select(func.count()).where(Finding.project_id == project_id, Finding.deleted_at == None))
         if asset_count == 0:
             issues.append(f"⚠️ 当前项目没有资产 → 请先添加资产或导入 CSV/Nessus")
         else:
@@ -613,6 +617,15 @@ async def ai_natural_language_query(req: AIChatRequest, request: Request, db: As
     from backend.ai.assistant import natural_language_query
     from backend.models.finding import Finding
     from backend.models.asset import Asset
+
+    # Project access control: verify user has access to the requested project
+    if req.project_id:
+        await verify_project_access(request, req.project_id, db)
+    else:
+        # No project_id = cross-project query, only admins allowed
+        role = getattr(request.state, "role", "viewer")
+        if role != "admin":
+            raise HTTPException(403, "跨项目查询仅管理员可用")
 
     parsed = await natural_language_query(req.message)
     if "error" in parsed:

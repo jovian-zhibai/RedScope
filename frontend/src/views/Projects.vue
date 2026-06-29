@@ -129,13 +129,15 @@ const loadProjects = async () => {
 }
 
 const createProject = async () => {
+  if (!form.value.name) { ElMessage.warning('请输入项目名称'); return }
   creating.value = true
   try {
     const res = await api.post('/projects', form.value)
     showCreate.value = false
     form.value = { name: '', mode: 'combat', description: '', client_name: '', auth_start_date: '', auth_end_date: '' }
     router.push(p(`/projects/${res.id}`))
-  } finally { creating.value = false }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '创建失败') }
+  finally { creating.value = false }
 }
 
 const goToProject = (row) => router.push(p(`/projects/${row.id}`))

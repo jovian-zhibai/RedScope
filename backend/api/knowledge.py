@@ -25,9 +25,11 @@ async def search_knowledge(
 ):
     query = select(VulnKnowledge).order_by(VulnKnowledge.updated_at.desc()).limit(limit)
     if keyword:
-        query = query.where(VulnKnowledge.title.ilike(f"%{keyword}%"))
+        esc_kw = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.where(VulnKnowledge.title.ilike(f"%{esc_kw}%"))
     if vendor:
-        query = query.where(VulnKnowledge.affected_vendor.ilike(f"%{vendor}%"))
+        esc_vd = vendor.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.where(VulnKnowledge.affected_vendor.ilike(f"%{esc_vd}%"))
     if severity:
         query = query.where(VulnKnowledge.severity == severity)
 

@@ -9,10 +9,6 @@ from backend.core.baseline_scanner import ALL_BASELINES, evaluate_check
 router = APIRouter()
 
 
-class BaselineRunRequest(BaseModel):
-    target: str = ""
-
-
 @router.get("/baselines")
 async def list_baselines(request: Request):
     return {"items": [
